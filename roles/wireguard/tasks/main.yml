@@ -1,0 +1,97 @@
+---
+# Assertions avoid looping over peers so private keys never appear in task output.
+- name: Validate WireGuard settings
+  ansible.builtin.assert:
+    that:
+      - wireguard_server_private_key is match('^[A-Za-z0-9+/]{43}=$')
+      - wireguard_server_public_key is match('^[A-Za-z0-9+/]{43}=$')
+      - wireguard_endpoint | length > 0
+      - wireguard_port | int > 0 and wireguard_port | int < 65536
+      - wireguard_ipv4_network.split('/')[0] != ansible_facts['default_ipv4']['network']
+      - wireguard_peers | length > 0
+      - wireguard_peers | selectattr('name', 'undefined') | list | length == 0
+      - wireguard_peers | selectattr('ipv4', 'undefined') | list | length == 0
+      - wireguard_peers | selectattr('public_key', 'undefined') | list | length == 0
+      - wireguard_peers | selectattr('private_key', 'undefined') | list | length == 0
+      - wireguard_peers | map(attribute='private_key') | reject('match', '^[A-Za-z0-9+/]{43}=$') | list | length == 0
+      - wireguard_peers | map(attribute='public_key') | reject('match', '^[A-Za-z0-9+/]{43}=$') | list | length == 0
+      - wireguard_peers | map(attribute='name') | reject('match', '^[A-Za-z0-9_-]+$') | list | length == 0
+      - wireguard_peers | map(attribute='name') | unique | list | length == wireguard_peers | length
+      - wireguard_peers | map(attribute='ipv4') | unique | list | length == wireguard_peers | length
+    fail_msg: >-
+      WireGuard config incomplete: need server keys, an endpoint (duckdns_domain or
+      wireguard_endpoint), a subnet different from the LAN, and peers with unique
+      name/ipv4 plus public_key/private_key. Peer names: letters, digits, - and _.
+
+- name: Install WireGuard tools
+  ansible.builtin.apt:
+    name: wireguard-tools
+    state: present
+
+- name: Install NAT / LAN-isolation ruleset
+  ansible.builtin.template:
+    src: exit.nft.j2
+    dest: "/etc/wireguard/{{ wireguard_interface }}-exit.nft"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart WireGuard
+
+- name: Install server config
+  ansible.builtin.template:
+    src: wg.conf.j2
+    dest: "/etc/wireguard/{{ wireguard_interface }}.conf"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart WireGuard
+
+- name: Enable WireGuard interface
+  ansible.builtin.systemd_service:
+    name: "wg-quick@{{ wireguard_interface }}"
+    enabled: true
+    state: started
+
+- name: Create local artifacts directory
+  ansible.builtin.file:
+    path: "{{ wireguard_artifacts_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+
+- name: Render client configs on the control node
+  ansible.builtin.template:
+    src: client.conf.j2
+    dest: "{{ wireguard_artifacts_dir }}/{{ peer.name }}.conf"
+    mode: "0600"
+  loop: "{{ wireguard_peers }}"
+  loop_control:
+    loop_var: peer
+    label: "{{ peer.name }}"
+  delegate_to: localhost
+  become: false
+  no_log: true
+  register: wireguard_client_configs
+
+- name: Render client QR codes
+  ansible.builtin.command:
+    argv:
+      - qrencode
+      - -t
+      - png
+      - -r
+      - "{{ wireguard_artifacts_dir }}/{{ item }}.conf"
+      - -o
+      - "{{ wireguard_artifacts_dir }}/{{ item }}.png"
+  loop: "{{ wireguard_peers | map(attribute='name') | list }}"
+  when:
+    - wireguard_qr_codes | bool
+    - lookup('ansible.builtin.pipe', 'command -v qrencode || true') | length > 0
+    - >-
+      item in (wireguard_client_configs.results | selectattr('changed') | map(attribute='peer.name') | list)
+      or not (wireguard_artifacts_dir ~ '/' ~ item ~ '.png') is exists
+  delegate_to: localhost
+  become: false
+  changed_when: true

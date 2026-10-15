@@ -1,0 +1,110 @@
+---
+- name: Check target platform
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Debian'
+      - ansible_facts['default_ipv4']['interface'] is defined
+    fail_msg: "Only Debian with a default IPv4 route is supported."
+
+- name: Set hostname
+  ansible.builtin.hostname:
+    name: "{{ node_hostname }}"
+
+- name: Map hostname in /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1\s'
+    line: "127.0.1.1 {{ node_hostname }}"
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ node_timezone }}"
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Apply pending upgrades
+  ansible.builtin.apt:
+    upgrade: safe
+  when: baseline_apt_upgrade | bool
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ baseline_packages }}"
+    state: present
+
+- name: Generate locales
+  community.general.locale_gen:
+    name: "{{ baseline_locales }}"
+    state: present
+
+- name: Gather installed packages
+  ansible.builtin.package_facts:
+
+# Correct time is required for TLS (DuckDNS, apt) and Tailscale; keep any NTP daemon already present.
+- name: Ensure time sync
+  when: ansible_facts['packages'] is not contains('chrony') and ansible_facts['packages'] is not contains('ntpsec')
+  block:
+    - name: Install systemd-timesyncd
+      ansible.builtin.apt:
+        name: systemd-timesyncd
+        state: present
+
+    - name: Enable systemd-timesyncd
+      ansible.builtin.systemd_service:
+        name: systemd-timesyncd
+        enabled: true
+        state: started
+
+- name: Load tcp_bbr at boot
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/bbr.conf
+    content: "tcp_bbr\n"
+    mode: "0644"
+  when: baseline_enable_bbr | bool
+
+- name: Load tcp_bbr now
+  community.general.modprobe:
+    name: tcp_bbr
+    state: present
+  when: baseline_enable_bbr | bool
+
+- name: Apply sysctl settings
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/99-exit-node.conf
+    sysctl_set: true
+    reload: true
+  loop: "{{ baseline_sysctl + (baseline_bbr_sysctl if baseline_enable_bbr | bool else []) }}"
+
+- name: Create journald drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    mode: "0755"
+
+- name: Cap journald disk usage
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/limit.conf
+    content: |
+      [Journal]
+      SystemMaxUse={{ baseline_journald_max_use }}
+    mode: "0644"
+  notify: Restart journald
+
+- name: Enable unattended-upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    mode: "0644"
+
+- name: Restrict unattended-upgrades to security updates
+  ansible.builtin.template:
+    src: 52exit-node-unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/52exit-node-unattended-upgrades
+    mode: "0644"

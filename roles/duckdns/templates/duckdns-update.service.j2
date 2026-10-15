@@ -1,0 +1,14 @@
+[Unit]
+Description=Update DuckDNS record
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/duckdns.env
+ExecStart=/usr/local/bin/duckdns-update
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes

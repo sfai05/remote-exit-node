@@ -1,0 +1,19 @@
+---
+- name: Install unbound
+  ansible.builtin.apt:
+    name: unbound
+    state: present
+
+- name: Configure unbound for WireGuard clients
+  ansible.builtin.template:
+    src: exit-node.conf.j2
+    dest: /etc/unbound/unbound.conf.d/exit-node.conf
+    mode: "0644"
+    validate: unbound-checkconf %s
+  notify: Restart unbound
+
+- name: Enable unbound
+  ansible.builtin.systemd_service:
+    name: unbound
+    enabled: true
+    state: started

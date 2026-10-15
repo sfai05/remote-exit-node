@@ -1,0 +1,21 @@
+---
+baseline_apt_upgrade: true
+baseline_packages:
+  - ca-certificates
+  - curl
+  - ethtool
+  - locales
+  - nftables
+  - unattended-upgrades
+
+# ssh forwards the client's LANG, so also generate the control node's locale.
+baseline_locales: "{{ (['en_US.UTF-8', lookup('ansible.builtin.env', 'LANG')] | select('match', '^[a-z]{2,3}_[A-Z]{2}\\.UTF-8$') | unique | list) }}"
+
+baseline_swappiness: 1 # eMMC: avoid needless writes
+baseline_enable_bbr: true # helps on long-haul, lossy links
+baseline_journald_max_use: 100M
+
+# unattended-upgrades: security only, plus any extra origin patterns you add
+baseline_unattended_extra_origins: []
+baseline_unattended_reboot: true # needed for kernel fixes on an unmanned box
+baseline_unattended_reboot_time: "04:30"

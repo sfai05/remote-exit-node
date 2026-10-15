@@ -1,0 +1,13 @@
+[Unit]
+Description=Enable UDP GRO forwarding on {{ node_wan_interface }} for Tailscale
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Leading '-': not every NIC driver supports these offloads.
+ExecStart=-/usr/sbin/ethtool -K {{ node_wan_interface }} rx-udp-gro-forwarding on rx-gro-list off
+
+[Install]
+WantedBy=multi-user.target

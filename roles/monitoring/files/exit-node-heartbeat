@@ -1,0 +1,6 @@
+#!/bin/sh
+# Expects HEARTBEAT_URL from the systemd EnvironmentFile (e.g. a healthchecks.io ping URL).
+set -eu
+
+# URL goes to curl via stdin config so it never appears in the process list.
+printf 'url = "%s"\n' "$HEARTBEAT_URL" | curl -fsS --max-time 10 --retry 3 -o /dev/null -K -

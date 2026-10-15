@@ -1,0 +1,19 @@
+# Managed by Ansible — do not edit.
+{% set server_addrs = [wireguard_ipv4_server ~ '/' ~ wireguard_ipv4_prefix] + ([wireguard_ipv6_server ~ '/' ~ wireguard_ipv6_prefix] if wireguard_ipv6_enabled | bool else []) %}
+[Interface]
+Address = {{ server_addrs | join(', ') }}
+ListenPort = {{ wireguard_port }}
+PrivateKey = {{ wireguard_server_private_key }}
+{% if wireguard_mtu | string | length > 0 %}
+MTU = {{ wireguard_mtu }}
+{% endif %}
+PostUp = nft -f /etc/wireguard/%i-exit.nft
+PostDown = nft delete table inet {{ wireguard_nft_table }}
+{% for peer in wireguard_peers %}
+{% set peer_v6 = wireguard_ipv6_enabled | bool and peer.ipv6 | default('') | length > 0 %}
+
+[Peer]
+# {{ peer.name }}
+PublicKey = {{ peer.public_key }}
+AllowedIPs = {{ ([peer.ipv4 ~ '/32'] + ([peer.ipv6 ~ '/128'] if peer_v6 else [])) | join(', ') }}
+{% endfor %}

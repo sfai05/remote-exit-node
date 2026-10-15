@@ -1,0 +1,6 @@
+---
+- name: Run DuckDNS update
+  ansible.builtin.systemd_service:
+    name: duckdns-update.service
+    state: started
+    daemon_reload: true

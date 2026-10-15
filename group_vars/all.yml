@@ -1,0 +1,44 @@
+---
+# Shared defaults for every exit node. This file is committed: NO SECRETS HERE.
+# Override per host in host_vars/<host>/vars.yml; secrets live in host_vars/<host>/vault.yml.
+
+# Feature toggles
+enable_tailscale: true
+enable_wireguard: true
+enable_dns: true # unbound resolver for WireGuard clients (avoids DNS/geo leaks)
+enable_duckdns: true
+enable_ssh_public: false # only if you port-forward SSH from the internet
+enable_monitoring: true
+
+# Identity
+node_hostname: "{{ inventory_hostname }}"
+node_timezone: UTC
+node_wan_interface: "{{ ansible_facts['default_ipv4']['interface'] }}"
+
+# Generated files with secrets (client configs, MANUAL.md) on the control node; gitignored.
+artifacts_dir: "{{ playbook_dir }}/artifacts/{{ inventory_hostname }}"
+
+# Tailscale
+tailscale_hostname: "{{ node_hostname }}"
+tailscale_authkey: "{{ vault_tailscale_authkey | default('', true) }}"
+
+# WireGuard server
+wireguard_interface: wg0
+# Must differ from any WireGuard port already used on the connecting gateway (e.g. 51820).
+wireguard_port: 51822
+wireguard_endpoint: "{{ (duckdns_domain ~ '.duckdns.org') if duckdns_domain | length > 0 else '' }}"
+wireguard_ipv4_network: 10.88.0.0/24
+wireguard_ipv4_server: 10.88.0.1
+wireguard_ipv6_enabled: true
+wireguard_ipv6_network: "fd88:88::/64"
+wireguard_ipv6_server: "fd88:88::1"
+wireguard_server_private_key: "{{ vault_wireguard_server.private_key | default('') }}"
+wireguard_server_public_key: "{{ vault_wireguard_server.public_key | default('') }}"
+wireguard_peers: []
+
+# DuckDNS
+duckdns_domain: "" # subdomain only, e.g. "myexit" for myexit.duckdns.org
+duckdns_token: "{{ vault_duckdns_token | default('', true) }}"
+
+# Monitoring
+monitoring_heartbeat_url: "{{ vault_monitoring_heartbeat_url | default('', true) }}"

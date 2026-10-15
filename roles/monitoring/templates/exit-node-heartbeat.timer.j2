@@ -1,0 +1,9 @@
+[Unit]
+Description=Periodic exit-node heartbeat
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ monitoring_heartbeat_interval }}
+
+[Install]
+WantedBy=timers.target

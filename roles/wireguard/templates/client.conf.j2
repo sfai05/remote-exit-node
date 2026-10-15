@@ -1,0 +1,22 @@
+# {{ peer.name }} -> {{ inventory_hostname }}. Contains a private key: keep it out of git.
+{% set peer_v6 = wireguard_ipv6_enabled | bool and peer.ipv6 | default('') | length > 0 %}
+{% set addrs = [peer.ipv4 ~ '/32'] + ([peer.ipv6 ~ '/128'] if peer_v6 else []) %}
+{% set dns = [wireguard_ipv4_server] + ([wireguard_ipv6_server] if peer_v6 else []) %}
+{% set mtu = peer.mtu | default(wireguard_mtu) | string %}
+[Interface]
+# No ListenPort on purpose: on a router it collides with other WireGuard tunnels.
+PrivateKey = {{ peer.private_key }}
+Address = {{ addrs | join(', ') }}
+{% if enable_dns | bool %}
+DNS = {{ dns | join(', ') }}
+{% endif %}
+{% if mtu | length > 0 %}
+MTU = {{ mtu }}
+{% endif %}
+
+[Peer]
+PublicKey = {{ wireguard_server_public_key }}
+Endpoint = {{ wireguard_endpoint }}:{{ wireguard_port }}
+# ::/0 is included even without IPv6 so IPv6 is black-holed instead of leaking.
+AllowedIPs = {{ peer.allowed_ips | default('0.0.0.0/0, ::/0') }}
+PersistentKeepalive = {{ peer.keepalive | default(wireguard_keepalive) }}

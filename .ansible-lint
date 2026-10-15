@@ -1,0 +1,6 @@
+---
+profile: moderate
+exclude_paths:
+  - .github/
+  - artifacts/
+  - examples/

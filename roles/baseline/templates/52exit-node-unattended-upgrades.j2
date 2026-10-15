@@ -1,0 +1,14 @@
+// Managed by Ansible.
+// Replaces Debian's default origin list (which also pulls point releases).
+#clear Unattended-Upgrade::Origins-Pattern;
+Unattended-Upgrade::Origins-Pattern {
+        "origin=Debian,codename=${distro_codename},label=Debian-Security";
+        "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+{% for origin in baseline_unattended_extra_origins %}
+        "{{ origin }}";
+{% endfor %}
+};
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "{{ 'true' if baseline_unattended_reboot | bool else 'false' }}";
+Unattended-Upgrade::Automatic-Reboot-Time "{{ baseline_unattended_reboot_time }}";

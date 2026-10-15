@@ -1,0 +1,4 @@
+---
+monitoring_watchdog_enabled: true # reboot on kernel/system hang if a hardware watchdog exists
+monitoring_watchdog_runtime_sec: 30s
+monitoring_heartbeat_interval: 5min

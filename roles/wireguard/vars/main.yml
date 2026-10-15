@@ -1,0 +1,4 @@
+---
+wireguard_nft_table: "{{ wireguard_interface }}_exit"
+wireguard_ipv4_prefix: "{{ wireguard_ipv4_network.split('/')[1] }}"
+wireguard_ipv6_prefix: "{{ wireguard_ipv6_network.split('/')[1] }}"

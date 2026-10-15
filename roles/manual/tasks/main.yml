@@ -1,0 +1,28 @@
+---
+- name: Read Tailscale IPv4
+  ansible.builtin.command: tailscale ip -4
+  register: manual_tailscale_ip
+  changed_when: false
+  failed_when: false
+  when: enable_tailscale | bool
+
+- name: Create local artifacts directory
+  ansible.builtin.file:
+    path: "{{ artifacts_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+
+- name: Write operations manual
+  ansible.builtin.template:
+    src: MANUAL.md.j2
+    dest: "{{ artifacts_dir }}/MANUAL.md"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Show manual location
+  ansible.builtin.debug:
+    msg: "Manual (contains private keys, store it in your password manager): {{ artifacts_dir }}/MANUAL.md"

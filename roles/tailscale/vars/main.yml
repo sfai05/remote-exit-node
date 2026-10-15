@@ -1,0 +1,9 @@
+---
+tailscale_authkey_path: /run/tailscale-authkey
+tailscale_pref_flags:
+  - "--hostname={{ tailscale_hostname }}"
+  - "--advertise-exit-node={{ tailscale_advertise_exit_node | bool | string | lower }}"
+  - "--ssh={{ tailscale_ssh | bool | string | lower }}"
+  - "--accept-routes={{ tailscale_accept_routes | bool | string | lower }}"
+  - "--accept-dns={{ tailscale_accept_dns | bool | string | lower }}"
+  - "--auto-update={{ tailscale_auto_update | bool | string | lower }}"

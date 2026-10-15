@@ -1,0 +1,53 @@
+---
+- name: Look up the Ansible login user
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ ssh_login_user }}"
+
+- name: Check for an authorized_keys file
+  ansible.builtin.stat:
+    path: "{{ ansible_facts['getent_passwd'][ssh_login_user][4] }}/.ssh/authorized_keys"
+  register: ssh_authorized_keys
+
+- name: Refuse to disable password login without a key in place
+  ansible.builtin.assert:
+    that:
+      - ssh_password_auth | bool or (ssh_authorized_keys.stat.exists and ssh_authorized_keys.stat.size > 0)
+    fail_msg: >-
+      No authorized_keys for the login user. Run ssh-copy-id first, or set
+      ssh_password_auth: true to avoid locking yourself out.
+
+- name: Harden sshd
+  ansible.builtin.template:
+    src: 10-exit-node.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-exit-node.conf
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Reload sshd
+
+- name: Enable sshd
+  ansible.builtin.systemd_service:
+    name: ssh
+    enabled: true
+    state: started
+
+- name: Install sshguard
+  ansible.builtin.apt:
+    name: sshguard
+    state: present
+  when: enable_ssh_public | bool
+
+- name: Configure sshguard allowlist
+  ansible.builtin.copy:
+    dest: /etc/sshguard/whitelist
+    content: "{{ ssh_sshguard_allowlist | join('\n') }}\n"
+    mode: "0644"
+  when: enable_ssh_public | bool
+  notify: Restart sshguard
+
+- name: Enable sshguard
+  ansible.builtin.systemd_service:
+    name: sshguard
+    enabled: true
+    state: started
+  when: enable_ssh_public | bool

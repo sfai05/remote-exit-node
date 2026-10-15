@@ -1,0 +1,14 @@
+[Unit]
+Description=Send exit-node heartbeat
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/exit-node-heartbeat.env
+ExecStart=/usr/local/bin/exit-node-heartbeat
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes

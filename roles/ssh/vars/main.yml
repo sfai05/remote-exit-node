@@ -1,0 +1,2 @@
+---
+ssh_login_user: "{{ ansible_user | default(lookup('ansible.builtin.env', 'USER')) }}"

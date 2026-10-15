@@ -1,0 +1,11 @@
+---
+ssh_password_auth: false
+ssh_permit_root_login: "no"
+
+# Only used when enable_ssh_public is true (SSH port-forwarded from the internet).
+ssh_sshguard_allowlist:
+  - 127.0.0.0/8
+  - ::1
+  - 100.64.0.0/10 # tailnet
+  - "{{ wireguard_ipv4_network }}"
+  - "{{ wireguard_ipv6_network }}"

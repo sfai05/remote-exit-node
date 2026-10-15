@@ -1,0 +1,58 @@
+---
+- name: Create systemd drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system.conf.d
+    state: directory
+    mode: "0755"
+  when: monitoring_watchdog_enabled | bool
+
+- name: Enable hardware watchdog
+  ansible.builtin.copy:
+    dest: /etc/systemd/system.conf.d/watchdog.conf
+    content: |
+      [Manager]
+      RuntimeWatchdogSec={{ monitoring_watchdog_runtime_sec }}
+      RebootWatchdogSec=2min
+    mode: "0644"
+  when: monitoring_watchdog_enabled | bool
+  notify: Reexec systemd
+
+- name: Configure heartbeat
+  when: monitoring_heartbeat_url | length > 0
+  block:
+    - name: Validate heartbeat URL
+      ansible.builtin.assert:
+        that: monitoring_heartbeat_url is match('^https://')
+        fail_msg: "monitoring_heartbeat_url must be an https:// URL."
+
+    - name: Write heartbeat URL
+      ansible.builtin.copy:
+        dest: /etc/exit-node-heartbeat.env
+        content: "HEARTBEAT_URL={{ monitoring_heartbeat_url }}\n"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Install heartbeat script
+      ansible.builtin.copy:
+        src: exit-node-heartbeat
+        dest: /usr/local/bin/exit-node-heartbeat
+        mode: "0755"
+
+    - name: Install heartbeat systemd units
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        mode: "0644"
+      loop:
+        - exit-node-heartbeat.service
+        - exit-node-heartbeat.timer
+      notify: Restart heartbeat timer
+
+    - name: Enable heartbeat timer
+      ansible.builtin.systemd_service:
+        name: exit-node-heartbeat.timer
+        enabled: true
+        state: started
+        daemon_reload: true

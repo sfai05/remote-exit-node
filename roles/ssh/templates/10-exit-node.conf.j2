@@ -1,0 +1,8 @@
+# Managed by Ansible.
+PubkeyAuthentication yes
+PasswordAuthentication {{ 'yes' if ssh_password_auth | bool else 'no' }}
+KbdInteractiveAuthentication no
+PermitRootLogin {{ ssh_permit_root_login }}
+MaxAuthTries 3
+LoginGraceTime 30
+X11Forwarding no

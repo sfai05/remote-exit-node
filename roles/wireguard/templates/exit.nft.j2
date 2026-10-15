@@ -1,0 +1,37 @@
+# Managed by Ansible. Loaded by wg-quick PostUp, removed by PostDown.
+table inet {{ wireguard_nft_table }}
+delete table inet {{ wireguard_nft_table }}
+
+table inet {{ wireguard_nft_table }} {
+{% if wireguard_block_lan | bool %}
+    set blocked_v4 {
+        type ipv4_addr
+        flags interval
+        elements = { {{ wireguard_blocked_ipv4 | join(', ') }} }
+    }
+
+    set blocked_v6 {
+        type ipv6_addr
+        flags interval
+        elements = { {{ wireguard_blocked_ipv6 | join(', ') }} }
+    }
+
+{% endif %}
+    chain forward {
+        type filter hook forward priority filter; policy accept;
+        iifname "{{ wireguard_interface }}" tcp flags & (syn | rst) == syn tcp option maxseg size set rt mtu
+        oifname "{{ wireguard_interface }}" tcp flags & (syn | rst) == syn tcp option maxseg size set rt mtu
+{% if wireguard_block_lan | bool %}
+        iifname "{{ wireguard_interface }}" ip daddr @blocked_v4 drop
+        iifname "{{ wireguard_interface }}" ip6 daddr @blocked_v6 drop
+{% endif %}
+    }
+
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        oifname "{{ node_wan_interface }}" ip saddr {{ wireguard_ipv4_network }} masquerade
+{% if wireguard_ipv6_enabled | bool %}
+        oifname "{{ node_wan_interface }}" ip6 saddr {{ wireguard_ipv6_network }} masquerade
+{% endif %}
+    }
+}

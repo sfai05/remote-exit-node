@@ -1,0 +1,90 @@
+---
+- name: Install Tailscale apt signing key
+  ansible.builtin.get_url:
+    url: "{{ tailscale_repo_url }}/{{ ansible_facts['distribution_release'] }}.noarmor.gpg"
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: "0644"
+
+- name: Add Tailscale apt repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/tailscale.list
+    content: >
+      deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg]
+      {{ tailscale_repo_url }} {{ ansible_facts['distribution_release'] }} main
+    mode: "0644"
+  register: tailscale_repo
+
+- name: Install Tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    state: present
+    update_cache: "{{ tailscale_repo is changed }}"
+
+- name: Enable tailscaled
+  ansible.builtin.systemd_service:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Read Tailscale state
+  ansible.builtin.command: tailscale status --json
+  register: tailscale_status
+  changed_when: false
+  failed_when: false
+
+- name: Parse Tailscale backend state
+  ansible.builtin.set_fact:
+    tailscale_backend_state: "{{ (((tailscale_status.stdout | default('', true)) or '{}') | from_json).BackendState | default('NoState') }}"
+
+- name: Join the tailnet
+  when: tailscale_backend_state != 'Running'
+  block:
+    - name: Check auth key is set
+      ansible.builtin.assert:
+        that: tailscale_authkey is match('^tskey-')
+        fail_msg: "Node is not logged in and vault_tailscale_authkey is not a tskey-... auth key."
+
+    # Passed via file so the key never shows up in the process list.
+    - name: Stage auth key
+      ansible.builtin.copy:
+        dest: "{{ tailscale_authkey_path }}"
+        content: "{{ tailscale_authkey }}"
+        mode: "0600"
+      no_log: true
+
+    - name: Run tailscale up
+      ansible.builtin.command:
+        argv:
+          - tailscale
+          - up
+          - --reset
+          - "--auth-key=file:{{ tailscale_authkey_path }}"
+          - "--hostname={{ tailscale_hostname }}"
+      changed_when: true
+  always:
+    - name: Remove staged auth key
+      ansible.builtin.file:
+        path: "{{ tailscale_authkey_path }}"
+        state: absent
+
+# `tailscale set` is idempotent, so it never reports a change.
+- name: Apply Tailscale preferences
+  ansible.builtin.command:
+    argv: "{{ ['tailscale', 'set'] + tailscale_pref_flags }}"
+  changed_when: false
+
+- name: Install UDP GRO forwarding unit
+  ansible.builtin.template:
+    src: tailscale-udp-gro.service.j2
+    dest: /etc/systemd/system/tailscale-udp-gro.service
+    mode: "0644"
+  when: tailscale_udp_gro_forwarding | bool
+  notify: Restart tailscale-udp-gro
+
+- name: Enable UDP GRO forwarding unit
+  ansible.builtin.systemd_service:
+    name: tailscale-udp-gro.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: tailscale_udp_gro_forwarding | bool

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Expects DUCKDNS_DOMAIN and DUCKDNS_TOKEN from the systemd EnvironmentFile.
+set -eu
+
+# URL goes to curl via stdin config so the token never appears in the process list.
+resp=$(printf 'url = "https://www.duckdns.org/update?domains=%s&token=%s&ip="\n' \
+    "$DUCKDNS_DOMAIN" "$DUCKDNS_TOKEN" | curl -fsS --max-time 30 --retry 3 -K -)
+
+if [ "$resp" != "OK" ]; then
+    echo "DuckDNS update failed: $resp" >&2
+    exit 1
+fi

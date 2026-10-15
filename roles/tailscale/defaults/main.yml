@@ -1,0 +1,8 @@
+---
+tailscale_advertise_exit_node: true
+tailscale_ssh: true
+tailscale_accept_routes: false
+tailscale_accept_dns: false # keep the node's own resolver; exit-node DNS stays local
+tailscale_auto_update: true # Tailscale repo is outside unattended-upgrades' security scope
+tailscale_udp_gro_forwarding: true # better exit-node throughput
+tailscale_repo_url: "https://pkgs.tailscale.com/stable/{{ ansible_facts['distribution'] | lower }}"

@@ -1,0 +1,26 @@
+---
+- name: Provision remote exit node
+  hosts: exit_nodes
+  become: true
+  roles:
+    - role: baseline
+      tags: [baseline]
+    - role: ssh
+      tags: [ssh]
+    - role: tailscale
+      tags: [tailscale]
+      when: enable_tailscale | bool
+    - role: wireguard
+      tags: [wireguard]
+      when: enable_wireguard | bool
+    - role: dns
+      tags: [dns]
+      when: enable_dns | bool and enable_wireguard | bool
+    - role: duckdns
+      tags: [duckdns]
+      when: enable_duckdns | bool
+    - role: monitoring
+      tags: [monitoring]
+      when: enable_monitoring | bool
+    - role: manual
+      tags: [manual]

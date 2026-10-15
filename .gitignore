@@ -1,0 +1,15 @@
+# Per-deployment config and secrets — never commit.
+.env
+/inventory.ini
+/host_vars/
+group_vars/**/vault*.yml
+/artifacts/
+*.key
+.vault-pass*
+vault-password*
+
+# Tooling
+*.retry
+.venv/
+__pycache__/
+.ansible/
