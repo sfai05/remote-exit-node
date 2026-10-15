@@ -2,7 +2,7 @@
 wireguard_mtu: "" # empty = WireGuard default; set e.g. 1380 if the path has PPPoE/odd MTU
 wireguard_keepalive: 25
 
-# Stop tunnel clients from reaching the host network's LAN (your brother's devices).
+# Stop tunnel clients from reaching the LAN the node is plugged into.
 wireguard_block_lan: true
 wireguard_blocked_ipv4:
   - 10.0.0.0/8

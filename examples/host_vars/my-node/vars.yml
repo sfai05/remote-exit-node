@@ -4,7 +4,7 @@
 
 ansible_become_pass: "{{ vault_become_pass }}"
 
-node_timezone: Asia/Hong_Kong
+node_timezone: Europe/Berlin
 
 duckdns_domain: CHANGEME # subdomain only: "myexit" -> myexit.duckdns.org
 

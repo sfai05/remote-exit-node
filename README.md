@@ -1,16 +1,16 @@
 # remote-exit-node
 
 Ansible project that turns a small Debian box (tested target: Dell Wyse 3040, Debian 13)
-into an **unmanned residential exit node** in someone else's home — e.g. a family member
-abroad — so you can browse from a clean, domestic IP of that country.
+into an **unmanned residential exit node** at a remote site, so you can browse from a clean,
+residential IP of that location.
 
 ```mermaid
 flowchart LR
-    subgraph You["Your home / on the go"]
-        UniFi["UniFi gateway<br/>(WireGuard client)"]
+    subgraph Client["Client side"]
+        UniFi["Router / gateway<br/>(WireGuard client)"]
         Laptop["Laptop / phone<br/>(Tailscale or WireGuard)"]
     end
-    subgraph Remote["Remote home (e.g. your brother's)"]
+    subgraph Remote["Remote site"]
         Router["Home router<br/>UDP port-forward"]
         Node["exit node<br/>wg0 + tailscale0 + unbound"]
     end
@@ -75,7 +75,7 @@ artifacts/                     generated client configs + MANUAL.md (gitignored,
 
 | Item | Notes |
 |---|---|
-| Node name | e.g. `hk-node`; used for the inventory, `host_vars/`, and Tailscale hostname |
+| Node name | e.g. `exit-node`; used for the inventory, `host_vars/`, and Tailscale hostname |
 | Node host | LAN IP or hostname reachable from your Mac during setup (check: `ping -c1 <host>`). A LAN IP is the most reliable; hostnames depend on your router's DNS (UniFi registers DHCP names) or mDNS (`<name>.local`, needs `avahi-daemon` on the node) |
 | Node user + sudo password | The Debian user you created at install |
 | Tailscale auth key | See step 2 |
@@ -130,7 +130,7 @@ In **Machines** → the node → `…` menu:
 - SSH: `tailscale ssh "$NODE_USER@$NODE"`.
 
 Shared tailnet? With the default allow-all policy, anyone using the exit node can also reach
-the remote home's LAN. Restrict that with Tailscale grants (`autogroup:internet`) if needed.
+the remote site's LAN. Restrict that with Tailscale grants (`autogroup:internet`) if needed.
 
 ## 3. Configure
 
@@ -198,7 +198,7 @@ The last step writes `artifacts/$NODE/MANUAL.md`: login paths, router port-forwa
 health checks and troubleshooting. It contains private keys; store it in your password manager.
 Refresh it alone with `--tags manual`.
 
-After the box moves to the remote home, point `ansible_host` at its Tailscale name to keep
+After the box moves to the remote site, point `ansible_host` at its Tailscale name to keep
 managing it:
 
 ```bash
@@ -224,7 +224,7 @@ sed -i '' "/^$NODE /s/ansible_host=[^ ]*/ansible_host=$NODE/" inventory.ini   # 
 - Reaching the router's admin page later needs no subnet route: tunnel through the node with
   `ssh -L 8080:<router-ip>:80 "$NODE_USER@$NODE"` and open http://localhost:8080.
 
-**UniFi gateway (your home)**
+**UniFi gateway (client side)**
 
 - Settings → VPN → VPN Client → Create New → WireGuard → upload one client config, e.g.
   `artifacts/$NODE/unifi.conf` (also included in `MANUAL.md`).

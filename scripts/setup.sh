@@ -60,7 +60,7 @@ fi
 command -v ansible-vault >/dev/null || die "ansible not found: pipx install --include-deps ansible (or brew install ansible)"
 
 echo "== Node"
-ask NODE "Name (inventory + Tailscale hostname), e.g. hk-node" "" required
+ask NODE "Name (inventory + Tailscale hostname), e.g. exit-node" "" required
 [[ $NODE =~ ^[A-Za-z0-9_-]+$ ]] || die "NODE: letters, digits, - and _ only"
 ask NODE_HOST "LAN IP or hostname of the node, reachable from here now" "" required
 ask NODE_USER "SSH/sudo user on the node" "" required
