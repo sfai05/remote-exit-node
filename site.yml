@@ -13,12 +13,16 @@
     - role: wireguard
       tags: [wireguard]
       when: enable_wireguard | bool
+    - role: lan_guard
+      tags: [lan_guard]
     - role: dns
       tags: [dns]
       when: enable_dns | bool and enable_wireguard | bool
     - role: duckdns
       tags: [duckdns]
       when: enable_duckdns | bool
+    - role: doctor
+      tags: [doctor]
     - role: monitoring
       tags: [monitoring]
       when: enable_monitoring | bool

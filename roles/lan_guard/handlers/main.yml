@@ -1,0 +1,12 @@
+---
+- name: Reload LAN guard table
+  ansible.builtin.command: /usr/sbin/nft -f /etc/exit-node/guard.nft
+  changed_when: true
+  listen: Reload LAN guard
+
+- name: Refresh LAN guard prefixes
+  ansible.builtin.systemd_service:
+    name: exit-node-lan-guard.service
+    state: restarted
+    daemon_reload: true
+  listen: Reload LAN guard

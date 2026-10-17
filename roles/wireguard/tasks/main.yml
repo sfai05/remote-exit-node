@@ -28,7 +28,7 @@
     name: wireguard-tools
     state: present
 
-- name: Install NAT / LAN-isolation ruleset
+- name: Install NAT / MSS ruleset
   ansible.builtin.template:
     src: exit.nft.j2
     dest: "/etc/wireguard/{{ wireguard_interface }}-exit.nft"

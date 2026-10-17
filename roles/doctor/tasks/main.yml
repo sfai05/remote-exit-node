@@ -1,0 +1,18 @@
+---
+- name: Install node self-check
+  ansible.builtin.template:
+    src: exit-node-doctor.j2
+    dest: /usr/local/sbin/exit-node-doctor
+    owner: root
+    group: root
+    mode: "0755"
+
+# Read-only diagnostics only; lets scripts/doctor.sh run it without a password prompt.
+- name: Allow the login user to run the self-check as root
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/exit-node-doctor
+    content: "{{ doctor_user }} ALL=(root) NOPASSWD: /usr/local/sbin/exit-node-doctor\n"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s

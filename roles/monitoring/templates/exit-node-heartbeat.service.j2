@@ -1,13 +1,13 @@
 [Unit]
-Description=Send exit-node heartbeat
+Description=Send exit-node heartbeat with self-check result
 Wants=network-online.target
 After=network-online.target
 
 [Service]
 Type=oneshot
 EnvironmentFile=/etc/exit-node-heartbeat.env
+# Runs as root: the self-check reads WireGuard and nftables state.
 ExecStart=/usr/local/bin/exit-node-heartbeat
-DynamicUser=yes
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

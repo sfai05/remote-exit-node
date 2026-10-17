@@ -16,4 +16,8 @@ PostDown = nft delete table inet {{ wireguard_nft_table }}
 # {{ peer.name }}
 PublicKey = {{ peer.public_key }}
 AllowedIPs = {{ ([peer.ipv4 ~ '/32'] + ([peer.ipv6 ~ '/128'] if peer_v6 else [])) | join(', ') }}
+{% if peer.server_keepalive | default(0) | int > 0 %}
+# Lets the client follow this node's new IP after a WAN IP change (if its firewall admits it).
+PersistentKeepalive = {{ peer.server_keepalive | int }}
+{% endif %}
 {% endfor %}

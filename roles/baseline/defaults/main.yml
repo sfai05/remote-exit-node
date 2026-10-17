@@ -1,6 +1,7 @@
 ---
 baseline_apt_upgrade: true
 baseline_packages:
+  - bind9-dnsutils
   - ca-certificates
   - curl
   - ethtool
@@ -12,7 +13,7 @@ baseline_packages:
 baseline_locales: "{{ (['en_US.UTF-8', lookup('ansible.builtin.env', 'LANG')] | select('match', '^[a-z]{2,3}_[A-Z]{2}\\.UTF-8$') | unique | list) }}"
 
 baseline_swappiness: 1 # eMMC: avoid needless writes
-baseline_enable_bbr: true # helps on long-haul, lossy links
+baseline_enable_bbr: true # node's own TCP only (updates, Tailscale relay); forwarded client traffic is unaffected
 baseline_journald_max_use: 100M
 
 # unattended-upgrades: security only, plus any extra origin patterns you add

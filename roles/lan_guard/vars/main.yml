@@ -1,0 +1,2 @@
+---
+lan_guard_interfaces: "{{ ([wireguard_interface] if enable_wireguard | bool else []) + (['tailscale0'] if enable_tailscale | bool else []) }}"

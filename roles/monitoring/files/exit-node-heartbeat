@@ -1,6 +1,12 @@
 #!/bin/sh
 # Expects HEARTBEAT_URL from the systemd EnvironmentFile (e.g. a healthchecks.io ping URL).
-set -eu
+# Sends the self-check report; failures go to "<url>/fail" so an alert means "service broken".
+set -u
+
+if report=$(/usr/local/sbin/exit-node-doctor --brief 2>&1); then rc=0; else rc=$?; fi
+suffix=""
+[ "$rc" -lt 2 ] || suffix=/fail
 
 # URL goes to curl via stdin config so it never appears in the process list.
-printf 'url = "%s"\n' "$HEARTBEAT_URL" | curl -fsS --max-time 10 --retry 3 -o /dev/null -K -
+printf 'url = "%s%s"\n' "$HEARTBEAT_URL" "$suffix" \
+    | curl -fsS --max-time 10 --retry 3 -o /dev/null --data-binary "${report:-all checks passed}" -K -

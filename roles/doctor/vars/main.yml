@@ -1,0 +1,9 @@
+---
+doctor_user: "{{ ansible_user | default(lookup('ansible.builtin.env', 'USER')) }}"
+doctor_units: >-
+  {{ ['ssh', 'exit-node-lan-guard.timer']
+     + (['tailscaled'] if enable_tailscale | bool else [])
+     + (['wg-quick@' ~ wireguard_interface] if enable_wireguard | bool else [])
+     + (['unbound'] if enable_dns | bool and enable_wireguard | bool else [])
+     + (['duckdns-update.timer'] if enable_duckdns | bool else [])
+     + (['exit-node-heartbeat.timer'] if enable_monitoring | bool and monitoring_heartbeat_url | length > 0 else []) }}

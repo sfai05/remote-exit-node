@@ -9,12 +9,14 @@
 - name: Set hostname
   ansible.builtin.hostname:
     name: "{{ node_hostname }}"
+  when: node_hostname | length > 0
 
 - name: Map hostname in /etc/hosts
   ansible.builtin.lineinfile:
     path: /etc/hosts
     regexp: '^127\.0\.1\.1\s'
     line: "127.0.1.1 {{ node_hostname }}"
+  when: node_hostname | length > 0
 
 - name: Set timezone
   community.general.timezone:

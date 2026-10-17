@@ -1,0 +1,14 @@
+---
+# Drop traffic from tunnel clients (WireGuard and Tailscale exit node) to the node's LAN.
+lan_guard_block: true
+lan_guard_static_ipv4:
+  - 10.0.0.0/8
+  - 100.64.0.0/10
+  - 169.254.0.0/16
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+lan_guard_static_ipv6:
+  - fc00::/7
+  - fe80::/10
+# The LAN's actual on-link prefixes (incl. ISP-assigned global IPv6) are re-read this often.
+lan_guard_refresh_interval: 5min

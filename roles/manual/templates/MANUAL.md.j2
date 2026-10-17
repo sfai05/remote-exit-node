@@ -77,9 +77,10 @@ any other device on the remote LAN: `ssh -L <local-port>:<device-ip>:<port> ...`
 | Port forward | **UDP {{ wireguard_port }}** (external) → that fixed IP, port **{{ wireguard_port }}** |
 | Nothing else | No TCP ports, no DMZ, no UPnP needed |
 
-Without the port forward only Tailscale works. Check the router's WAN IP equals what
-`curl -4 ifconfig.me` shows on the remote network; if not, the ISP uses CGNAT and the
-WireGuard path cannot work there.
+Without the port forward only Tailscale works. Verify it with `scripts/doctor.sh` from a
+different network (section 6). If it fails although the forward is set: compare the router's
+WAN IP with `curl -4 ifconfig.me` on the remote network. Different means CGNAT (WireGuard
+can't work there) or a second router in front (forward the port on both).
 {% else %}
 WireGuard is disabled: no port forwarding needed. A DHCP reservation for MAC
 `{{ lan['macaddress'] }}` is still recommended.
@@ -102,6 +103,9 @@ UniFi gateway: Settings → VPN → VPN Client → Create New → WireGuard → 
 (or paste it). Then Settings → Routing → Traffic Routes to choose which devices/domains use it.
 If the host's IP changes and the UniFi tunnel stays down, toggle the VPN client off and on:
 WireGuard looks up `{{ wireguard_endpoint }}` only when the tunnel starts.
+{% if wireguard_peers | selectattr('server_keepalive', 'defined') | list | length > 0 %}
+Server keepalive is on for: {{ wireguard_peers | selectattr('server_keepalive', 'defined') | map(attribute='name') | join(', ') }} (may let them recover by themselves).
+{% endif %}
 
 {% for peer in wireguard_peers %}
 ### {{ peer.name }} — {{ peer.ipv4 }}
@@ -114,27 +118,35 @@ WireGuard looks up `{{ wireguard_endpoint }}` only when the tunnel starts.
 {% endif %}
 ## 6. Health checks
 
+From the repo on your laptop:
+
 ```bash
-ssh {{ ssh_user }}@{{ tailscale_hostname }} 'tailscale status | head -3; systemctl is-active{{ " wg-quick@" ~ wireguard_interface if wg_on else "" }}{{ " unbound" if wg_on and enable_dns | bool else "" }}{{ " duckdns-update.timer" if enable_duckdns | bool else "" }}'
-{% if wg_on %}
-ssh -t {{ ssh_user }}@{{ tailscale_hostname }} 'sudo wg show'      # "latest handshake" per connected client
-{% endif %}
-{% if enable_duckdns | bool %}
-dig +short {{ duckdns_domain }}.duckdns.org                         # must equal the remote WAN IP
-{% endif %}
+scripts/doctor.sh          # node self-check{{ ' + WireGuard port-forward test (run from outside the remote network)' if wg_on else '' }}
 ```
 
-From a device using the node (Tailscale exit node or WireGuard):
+On the node: `sudo exit-node-doctor`. The same check runs with every heartbeat; failures
+are reported to the heartbeat service's `/fail` endpoint.
 
-- `curl -4 ifconfig.me` shows the remote IP; `curl -6 ifconfig.me` shows the remote IPv6 or fails, never your own.
-- https://dnsleaktest.com lists only resolvers in the remote country.
+Acceptance tests (before shipping, and again on site):
+
+| Test | Expected |
+|---|---|
+| `scripts/doctor.sh` from another network | No FAIL{{ '; port forward OK' if wg_on else '' }} |
+| Through each tunnel: `curl -4 ifconfig.me` | The remote site's IP |
+| Through each tunnel: `curl -6 ifconfig.me` | Remote IPv6 or failure, **never your own** |
+| Through each tunnel: router admin page / ping a LAN device (IPv4 and IPv6) | Blocked (LAN guard) |
+| https://dnsleaktest.com through each tunnel | Only resolvers at the remote site |
+| Pull the power, wait 10 s, plug in | Both login paths back within ~3 min |
+{% if wg_on %}
+| Remote WAN IP changes | DuckDNS follows within 5 min; note whether router clients recover alone |
+{% endif %}
 
 ## 7. Troubleshooting
 
 | Symptom | Check |
 |---|---|
 | Tailscale shows the node offline | Power/network at the remote site → section 4. Try path B. |
-| WireGuard stuck connecting | Port forward (section 3), DuckDNS IP (section 6), CGNAT, toggle the client off/on |
+| WireGuard stuck connecting | `scripts/doctor.sh` from outside: port forward, DuckDNS, CGNAT / double NAT; toggle the client off/on |
 | Pages stall over WireGuard | MTU: set `wireguard_mtu: 1380` and re-run the playbook |
 | DuckDNS shows an old IP | `ssh ... 'systemctl status duckdns-update; journalctl -u duckdns-update -n 20'` |
 | Everything down | Ask for a power cycle (section 4); if still down, the box needs hands-on repair |

@@ -2,18 +2,6 @@
 wireguard_mtu: "" # empty = WireGuard default; set e.g. 1380 if the path has PPPoE/odd MTU
 wireguard_keepalive: 25
 
-# Stop tunnel clients from reaching the LAN the node is plugged into.
-wireguard_block_lan: true
-wireguard_blocked_ipv4:
-  - 10.0.0.0/8
-  - 100.64.0.0/10
-  - 169.254.0.0/16
-  - 172.16.0.0/12
-  - 192.168.0.0/16
-wireguard_blocked_ipv6:
-  - fc00::/7
-  - fe80::/10
-
 # Client configs (they contain private keys) are written here on the control node.
 wireguard_artifacts_dir: "{{ artifacts_dir }}"
 wireguard_qr_codes: true # needs qrencode on the control node; skipped if missing

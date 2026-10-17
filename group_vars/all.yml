@@ -11,7 +11,7 @@ enable_ssh_public: false # only if you port-forward SSH from the internet
 enable_monitoring: true
 
 # Identity
-node_hostname: "{{ inventory_hostname }}"
+node_hostname: "" # empty = leave the system hostname alone
 node_timezone: UTC
 node_wan_interface: "{{ ansible_facts['default_ipv4']['interface'] }}"
 
@@ -19,7 +19,7 @@ node_wan_interface: "{{ ansible_facts['default_ipv4']['interface'] }}"
 artifacts_dir: "{{ playbook_dir }}/artifacts/{{ inventory_hostname }}"
 
 # Tailscale
-tailscale_hostname: "{{ node_hostname }}"
+tailscale_hostname: "{{ inventory_hostname }}"
 tailscale_authkey: "{{ vault_tailscale_authkey | default('', true) }}"
 
 # WireGuard server

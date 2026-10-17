@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh LAN guard prefixes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ lan_guard_refresh_interval }}
+
+[Install]
+WantedBy=timers.target

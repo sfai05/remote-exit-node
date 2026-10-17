@@ -1,0 +1,43 @@
+---
+- name: Create config directory
+  ansible.builtin.file:
+    path: /etc/exit-node
+    state: directory
+    mode: "0755"
+
+- name: Install LAN guard ruleset
+  ansible.builtin.template:
+    src: guard.nft.j2
+    dest: /etc/exit-node/guard.nft
+    mode: "0644"
+    validate: /usr/sbin/nft -c -f %s
+  notify: Reload LAN guard
+
+- name: Install LAN guard refresh script
+  ansible.builtin.template:
+    src: exit-node-lan-guard.j2
+    dest: /usr/local/sbin/exit-node-lan-guard
+    mode: "0755"
+  notify: Reload LAN guard
+
+- name: Install LAN guard systemd units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - exit-node-lan-guard.service
+    - exit-node-lan-guard.timer
+  notify: Reload LAN guard
+
+- name: Enable LAN guard at boot
+  ansible.builtin.systemd_service:
+    name: exit-node-lan-guard.service
+    enabled: true
+    daemon_reload: true
+
+- name: Enable LAN guard refresh timer
+  ansible.builtin.systemd_service:
+    name: exit-node-lan-guard.timer
+    enabled: true
+    state: started

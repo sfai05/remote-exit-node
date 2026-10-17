@@ -28,20 +28,26 @@ flowchart LR
 | DuckDNS | Dynamic DNS for the WireGuard endpoint | systemd timer; token never in argv or world-readable files |
 | DNS | `unbound` for WireGuard clients | Lookups exit from the remote IP: no DNS leak, correct geo-CDN |
 | SSH | Key-only hardening; optional `sshguard` | For "SSH via DuckDNS", prefer SSH *through* WireGuard (see below) |
-| Monitoring | Hardware watchdog, optional heartbeat (healthchecks.io) | Know when the box is down before you need it |
-| Baseline | BBR, IPv4/IPv6 forwarding, journald cap, low swappiness, time sync, locales, security-only auto-updates with nightly reboot | eMMC friendly, no Docker |
+| Monitoring | Hardware watchdog; optional heartbeat (healthchecks.io) carrying the node self-check, `/fail` on broken services | Alerts mean "service broken", not just "box off" |
+| Doctor | `scripts/doctor.sh`: node self-check + end-to-end test of the WireGuard port forward | Run any time, and before shipping |
+| LAN guard | Tunnel clients (WireGuard **and** Tailscale exit node) are blocked from the node's LAN | Private ranges + the LAN's actual IPv4/IPv6 prefixes, refreshed every 5 min |
+| Baseline | BBR (node's own TCP only), IPv4/IPv6 forwarding, journald cap, low swappiness, time sync, locales, security-only auto-updates with nightly reboot | eMMC friendly, no Docker |
 | Manual | `artifacts/<node>/MANUAL.md` generated on every run | Everything needed to operate the node, incl. all WireGuard client configs |
 
-Safety defaults: WireGuard clients cannot reach the remote LAN (`wireguard_block_lan`), IPv6 is
-tunnelled (or black-holed) so it can't leak your real location, and every secret lives in
-`ansible-vault`.
+Safety defaults: tunnel clients are blocked from the remote LAN (`lan_guard_block`; verify it
+with the acceptance tests in step 6), IPv6 is tunnelled (or black-holed) so it can't leak
+your real location, and every secret lives in `ansible-vault` or the gitignored `.env`.
 
 ## Limitations
 
-- **CGNAT**: the WireGuard and DuckDNS tracks need a public IPv4 on the remote router
-  (inbound UDP port-forward). Many ISPs use CGNAT; check before relying on it:
-  compare the router's WAN IP with `curl -4 ifconfig.me` from the remote network. If they
-  differ, set `enable_wireguard: false` and `enable_duckdns: false` and use Tailscale only.
+- **CGNAT / double NAT**: the WireGuard track needs inbound UDP to reach the node. If the
+  router's WAN IP differs from `curl -4 ifconfig.me` on the remote network, the ISP uses CGNAT
+  (no fix; set `enable_wireguard: false` and `enable_duckdns: false`, Tailscale still works)
+  or there is a second router in front (forward the port on both). `scripts/doctor.sh` run
+  from outside that network gives the definitive answer.
+- **WAN IP changes**: DuckDNS follows within 5 minutes, but a router-based WireGuard client
+  (e.g. UniFi) may only re-resolve the hostname when its tunnel restarts. Test this before
+  relying on it; `server_keepalive` on that peer may let it recover by itself.
 - Debian only (tested on 13 "trixie").
 - Traffic leaves from the host's internet connection. Agree on that with them up front.
 
@@ -58,6 +64,7 @@ roles/
   baseline/  ssh/  tailscale/  wireguard/  dns/  duckdns/  monitoring/  manual/
 scripts/setup.sh               interactive setup: inventory, vars, encrypted vault, SSH key
 scripts/wg-keys.sh             generate extra WireGuard keys as vault YAML (stdout only)
+scripts/doctor.sh              health check incl. end-to-end WireGuard port-forward test
 artifacts/                     generated client configs + MANUAL.md (gitignored, contain private keys)
 ```
 
@@ -129,8 +136,9 @@ In **Machines** → the node → `…` menu:
   `tailscale set --exit-node=`.
 - SSH: `tailscale ssh "$NODE_USER@$NODE"`.
 
-Shared tailnet? With the default allow-all policy, anyone using the exit node can also reach
-the remote site's LAN. Restrict that with Tailscale grants (`autogroup:internet`) if needed.
+Exit-node users can't reach the remote site's LAN (LAN guard). With the default allow-all
+policy the node itself can still reach your other tailnet devices; restrict that with
+Tailscale grants if you share the tailnet or worry about the box being compromised.
 
 ## 3. Configure
 
@@ -171,12 +179,13 @@ Fine-tuning: add any setting to `host_vars/$NODE/vars.yml` (see `group_vars/all.
 | Variable | Default | Purpose |
 |---|---|---|
 | `enable_*` | see file | Turn tracks on/off |
-| `wireguard_port` | `51822` | Must differ from any WireGuard port already used on the client gateway (UniFi's own server/clients often use 51820) |
+| `wireguard_port` | `51822` | Any free UDP port on the remote router. Client configs omit `ListenPort`, so the server port can't clash with other tunnels on the client side |
 | `wireguard_ipv4_network` / `_ipv6_network` | `10.88.0.0/24` / `fd88:88::/64` | Must not overlap your LAN, the remote LAN, or `100.64.0.0/10` |
-| `wireguard_peers` | `[]` | One entry per client: `name`, `ipv4`, `ipv6`, keys, optional `allowed_ips`, `mtu`, `keepalive` |
-| `wireguard_block_lan` | `true` | Stop tunnel clients from reaching the host's LAN |
+| `wireguard_peers` | `[]` | One entry per client: `name`, `ipv4`, `ipv6`, keys, optional `allowed_ips`, `mtu`, `keepalive`, `server_keepalive` (set e.g. `25` on an always-on router peer only) |
+| `lan_guard_block` | `true` | Block WireGuard and Tailscale exit-node clients from the node's LAN |
 | `duckdns_domain` | `""` | Subdomain only |
 | `node_timezone` | `UTC` | |
+| `node_hostname` | `""` | Set to rename the system hostname; empty leaves it alone. The Tailscale name is `tailscale_hostname` (default: inventory name) |
 | `ssh_password_auth` | `false` | SSH password login (sudo and console always accept the password) |
 | `baseline_unattended_reboot` / `_time` | `true` / `04:30` | Automatic reboot after kernel updates, local time |
 
@@ -228,8 +237,8 @@ sed -i '' "/^$NODE /s/ansible_host=[^ ]*/ansible_host=$NODE/" inventory.ini   # 
 
 - Settings → VPN → VPN Client → Create New → WireGuard → upload one client config, e.g.
   `artifacts/$NODE/unifi.conf` (also included in `MANUAL.md`).
-- The config has no `ListenPort` on purpose; it would collide with other WireGuard
-  tunnels on the gateway (`EADDRINUSE`, stuck on "Connecting").
+- The config has no `ListenPort` on purpose: the client then uses a random local port, so it
+  can't collide with other WireGuard tunnels on the gateway (`EADDRINUSE`, stuck on "Connecting").
 - Settings → Routing → Traffic Routes → send chosen devices/domains through the new client.
 - If the import rejects IPv6, remove `ipv6` from the `unifi` peer and set
   `allowed_ips: 0.0.0.0/0`. Then disable IPv6 for the routed devices, or their IPv6
@@ -238,23 +247,35 @@ sed -i '' "/^$NODE /s/ansible_host=[^ ]*/ansible_host=$NODE/" inventory.ini   # 
 ## 6. Verify
 
 ```bash
-ssh "$NODE_USER@$NODE" 'tailscale status'                         # node online, exit node offered
-ssh -t "$NODE_USER@$NODE" 'sudo wg show'                          # listening on wireguard_port, handshakes
-ssh "$NODE_USER@$NODE" 'systemctl list-timers duckdns-update.timer'
-dig +short "$DUCKDNS_DOMAIN.duckdns.org"                          # equals the remote WAN IP
+scripts/doctor.sh                 # node self-check + WireGuard port-forward test
 ```
 
-From a device routed through the node (WireGuard or Tailscale exit node):
+The port-forward test sends a few UDP probes to the DuckDNS endpoint and checks that the
+node counted them. Run it from **outside** the remote network (e.g. a phone hotspot);
+from inside, most routers don't loop traffic back and the result is inconclusive. The node
+also runs the self-check in every heartbeat (`exit-node-doctor` on the node).
 
-- `curl -4 ifconfig.me` → remote country IP.
-- `curl -6 ifconfig.me` → remote IPv6, or a failure. **Never your own IPv6.**
-- https://dnsleaktest.com → only resolvers in the remote country.
-- `tailscale ssh "$NODE_USER@$NODE"` works.
+Acceptance tests before the box leaves your hands, and again on site:
+
+| Test | Expected |
+|---|---|
+| `scripts/doctor.sh` from another network | No FAIL; port forward OK |
+| From each tunnel (WireGuard, Tailscale exit node): `curl -4 ifconfig.me` | The remote site's IP |
+| From each tunnel: `curl -6 ifconfig.me` | The remote site's IPv6, or a failure. **Never your own** |
+| From each tunnel: open the remote router's admin page and ping a LAN device, IPv4 and IPv6 | Blocked (timeout) |
+| https://dnsleaktest.com through each tunnel | Only resolvers at the remote site |
+| Pull the power, wait 10 s, plug in | Both paths back within ~3 min, `scripts/doctor.sh` clean |
+| Change the remote WAN IP (router reconnect) | DuckDNS follows; note whether the router client recovers by itself |
+
+You can still reach the remote router yourself: `ssh -L` tunnels start on the node itself, so
+the LAN guard (which only filters forwarded tunnel traffic) doesn't affect them.
 
 ## Troubleshooting
 
-- **UniFi stuck on "Connecting"**: port forward missing, wrong `wireguard_port`, or DuckDNS
-  not updated (`journalctl -u duckdns-update`).
+- **UniFi stuck on "Connecting"**: run `scripts/doctor.sh` from outside the remote network;
+  it tells port forward, DuckDNS and CGNAT apart.
+- **Router client down after the remote IP changed**: toggle the VPN client off and on, or
+  set `server_keepalive: 25` on that peer.
 - **Slow / stalled pages over WireGuard**: MTU. Set `wireguard_mtu: 1380` (or per peer `mtu`).
 - **Tailscale re-join**: auth keys expire (90 days max). Once joined the node stays joined;
   only a fresh install needs a new key in the vault.

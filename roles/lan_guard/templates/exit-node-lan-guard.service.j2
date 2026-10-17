@@ -1,0 +1,11 @@
+[Unit]
+Description=Block tunnel clients from the local LAN
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/exit-node-lan-guard
+
+[Install]
+WantedBy=multi-user.target

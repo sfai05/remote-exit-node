@@ -1,0 +1,90 @@
+#!/bin/bash
+# Managed by Ansible. Node self-check; exit 0 = OK, 1 = warnings, 2 = failures.
+# Usage: exit-node-doctor [--brief]   (--brief prints only WARN/FAIL)
+#        exit-node-doctor probe-count (packets counted by the port-forward probe rule)
+set -u
+export LC_ALL=C
+
+case "${1:-}" in
+    probe-count)
+        nft list counter inet exit_node_guard wg_probe 2>/dev/null \
+            | awk '{for (i = 1; i < NF; i++) if ($i == "packets") {print $(i + 1); exit}}'
+        exit 0 ;;
+    "" | --brief) ;;
+    *) echo "usage: $0 [--brief] | probe-count" >&2; exit 64 ;;
+esac
+
+brief=${1:-}
+rc=0
+ok()   { [ -n "$brief" ] || printf 'OK    %s\n' "$*"; }
+info() { [ -n "$brief" ] || printf 'INFO  %s\n' "$*"; }
+warn() { printf 'WARN  %s\n' "$*"; [ "$rc" -ge 1 ] || rc=1; }
+fail() { printf 'FAIL  %s\n' "$*"; rc=2; }
+ago()  { local s=$1; if [ "$s" -lt 120 ]; then echo "${s}s"; elif [ "$s" -lt 7200 ]; then echo "$((s / 60))m"; else echo "$((s / 3600))h"; fi; }
+
+for unit in {{ doctor_units | join(' ') }}; do
+    if systemctl is-active --quiet "$unit"; then ok "$unit active"; else fail "$unit not active"; fi
+done
+
+failed=$(systemctl --failed --no-legend --plain | awk '{print $1}' | paste -sd' ' -)
+if [ -z "$failed" ]; then ok "no failed systemd units"; else warn "failed units: $failed"; fi
+
+{% if enable_tailscale | bool %}
+state=$(tailscale status --json 2>/dev/null | python3 -c 'import json, sys; print(json.load(sys.stdin).get("BackendState", ""))' 2>/dev/null)
+if [ "$state" = Running ]; then ok "Tailscale logged in and running"; else fail "Tailscale state: ${state:-unknown}"; fi
+
+{% endif %}
+if [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" = yes ]; then ok "clock synchronized"; else warn "clock not NTP-synchronized"; fi
+
+use=$(df --output=pcent / | tail -1 | tr -dc 0-9)
+if [ "$use" -ge 95 ]; then fail "root disk ${use}% full"; elif [ "$use" -ge 85 ]; then warn "root disk ${use}% full"; else ok "root disk ${use}% used"; fi
+
+pub4=$(curl -4 -fsS -m 10 https://ifconfig.me 2>/dev/null || true)
+if [ -n "$pub4" ]; then ok "IPv4 internet"; info "public IPv4: $pub4"; else fail "no IPv4 internet"; fi
+pub6=$(curl -6 -fsS -m 10 https://ifconfig.me 2>/dev/null || true)
+info "public IPv6: ${pub6:-none}"
+
+{% if enable_dns | bool and enable_wireguard | bool %}
+if [ -n "$(dig +short +time=3 +tries=1 @127.0.0.1 example.com A 2>/dev/null)" ]; then ok "unbound resolves"; else fail "unbound does not resolve"; fi
+
+{% endif %}
+{% if enable_duckdns | bool %}
+ddns=$(dig +short +time=3 +tries=1 @1.1.1.1 {{ duckdns_domain }}.duckdns.org A 2>/dev/null | tail -1)
+if [ -n "$pub4" ] && [ "$ddns" = "$pub4" ]; then ok "DuckDNS {{ duckdns_domain }}.duckdns.org -> $ddns"
+else warn "DuckDNS {{ duckdns_domain }}.duckdns.org -> ${ddns:-none}, public IPv4 ${pub4:-unknown} (updates every 5 min)"; fi
+
+{% endif %}
+if nft list table inet exit_node_guard >/dev/null 2>&1; then
+    lan=$(for s in lan_v4 lan_v6; do nft list set inet exit_node_guard "$s"; done 2>/dev/null \
+        | tr -d '\n' | grep -o 'elements = {[^}]*}' | sed 's/elements = { *//; s/ *}//' | tr -s ', \t' ' ' | paste -sd' ' -)
+    ok "LAN guard loaded"
+    info "LAN prefixes blocked for tunnel clients: ${lan:-none detected}"
+else
+    fail "LAN guard table missing"
+fi
+
+{% if enable_wireguard | bool %}
+declare -A peer_name=(
+{% for peer in wireguard_peers %}
+    ["{{ peer.public_key }}"]="{{ peer.name }}"
+{% endfor %}
+)
+now=$(date +%s)
+connected=0
+while read -r key ts; do
+    name=${peer_name[$key]:-unknown}
+    if [ "$ts" -eq 0 ]; then
+        info "WireGuard $name: no handshake since the interface came up"
+    else
+        connected=1
+        info "WireGuard $name: last handshake $(ago $((now - ts))) ago"
+    fi
+done < <(wg show {{ wireguard_interface }} latest-handshakes 2>/dev/null)
+if [ "$connected" = 1 ]; then
+    ok "WireGuard: a client has connected"
+else
+    warn "WireGuard: no client has connected yet. Check the router forwards UDP {{ wireguard_port }} to this node (test: scripts/doctor.sh from outside this network)"
+fi
+
+{% endif %}
+exit "$rc"
