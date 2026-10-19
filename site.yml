@@ -7,14 +7,15 @@
       tags: [baseline]
     - role: ssh
       tags: [ssh]
+    # Before the tunnels: it is what switches IP forwarding on.
+    - role: lan_guard
+      tags: [lan_guard]
     - role: tailscale
       tags: [tailscale]
       when: enable_tailscale | bool
     - role: wireguard
       tags: [wireguard]
       when: enable_wireguard | bool
-    - role: lan_guard
-      tags: [lan_guard]
     - role: dns
       tags: [dns]
       when: enable_dns | bool and enable_wireguard | bool

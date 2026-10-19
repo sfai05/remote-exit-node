@@ -24,7 +24,7 @@ tailscale_authkey: "{{ vault_tailscale_authkey | default('', true) }}"
 
 # WireGuard server
 wireguard_interface: wg0
-# Must differ from any WireGuard port already used on the connecting gateway (e.g. 51820).
+# Any free UDP port on the remote router. Client configs omit ListenPort, so it can't clash client-side.
 wireguard_port: 51822
 wireguard_endpoint: "{{ (duckdns_domain ~ '.duckdns.org') if duckdns_domain | length > 0 else '' }}"
 wireguard_ipv4_network: 10.88.0.0/24

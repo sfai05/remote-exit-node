@@ -50,7 +50,8 @@ if [ -n "${WG_PEERS:-}" ]; then
     my_ip=$(curl -4 -fsS -m 5 https://ifconfig.me 2>/dev/null || true)
 
     if [ "${after:-0}" -gt "${before:-0}" ]; then
-        echo "OK    probes reached the node: the router forwards UDP $port"
+        echo "OK    probes reached the node on UDP $port: the router forwards the port."
+        echo "      This doesn't prove a working tunnel; connect a client and check its handshake above."
     elif [ -n "$my_ip" ] && [ "$my_ip" = "$node_ip" ]; then
         echo "WARN  inconclusive: this machine shares the node's public IP ($my_ip)."
         echo "      Routers often don't loop traffic back to themselves; re-run from another network (e.g. phone hotspot)."

@@ -106,6 +106,8 @@ WireGuard looks up `{{ wireguard_endpoint }}` only when the tunnel starts.
 {% if wireguard_peers | selectattr('server_keepalive', 'defined') | list | length > 0 %}
 Server keepalive is on for: {{ wireguard_peers | selectattr('server_keepalive', 'defined') | map(attribute='name') | join(', ') }} (may let them recover by themselves).
 {% endif %}
+For the always-on router client, add `server_keepalive: 25` and `expect_connected: true` to its
+entry in `wireguard_peers`; the heartbeat then alerts when that tunnel is down.
 
 {% for peer in wireguard_peers %}
 ### {{ peer.name }} — {{ peer.ipv4 }}
@@ -124,8 +126,14 @@ From the repo on your laptop:
 scripts/doctor.sh          # node self-check{{ ' + WireGuard port-forward test (run from outside the remote network)' if wg_on else '' }}
 ```
 
-On the node: `sudo exit-node-doctor`. The same check runs with every heartbeat; failures
-are reported to the heartbeat service's `/fail` endpoint.
+On the node: `sudo exit-node-doctor`. The same node-side check runs with every heartbeat;
+failures are reported to the heartbeat service's `/fail` endpoint. It does not prove traffic
+through each tunnel: for that, ping `{{ wireguard_ipv4_server if wg_on else tailscale_hostname }}` through the tunnel from a
+machine on your side (e.g. an uptime monitor).
+
+IP forwarding is only switched on after the LAN guard rules are loaded. If the self-check
+says "IPv4 forwarding off", exit traffic is stopped on purpose: run
+`sudo systemctl start exit-node-lan-guard` and read its journal.
 
 Acceptance tests (before shipping, and again on site):
 

@@ -1,11 +1,13 @@
 ---
-# accept_ra=2 keeps SLAAC working on the WAN NIC once forwarding is on; order matters.
+# IP forwarding is deliberately absent: lan_guard enables it only after its rules are loaded.
 baseline_sysctl:
-  - { name: net.ipv4.ip_forward, value: "1" }
   - { name: net.ipv6.conf.default.accept_ra, value: "2" }
   - { name: "net.ipv6.conf.{{ node_wan_interface }}.accept_ra", value: "2" }
-  - { name: net.ipv6.conf.all.forwarding, value: "1" }
   - { name: vm.swappiness, value: "{{ baseline_swappiness }}" }
+
+baseline_sysctl_removed:
+  - net.ipv4.ip_forward
+  - net.ipv6.conf.all.forwarding
 
 baseline_bbr_sysctl:
   - { name: net.core.default_qdisc, value: fq }

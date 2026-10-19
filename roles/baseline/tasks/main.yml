@@ -82,6 +82,15 @@
     reload: true
   loop: "{{ baseline_sysctl + (baseline_bbr_sysctl if baseline_enable_bbr | bool else []) }}"
 
+# Only drops the boot-time setting; the running value is left to lan_guard.
+- name: Keep forwarding out of boot-time sysctl
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    sysctl_file: /etc/sysctl.d/99-exit-node.conf
+    state: absent
+    reload: false
+  loop: "{{ baseline_sysctl_removed }}"
+
 - name: Create journald drop-in directory
   ansible.builtin.file:
     path: /etc/systemd/journald.conf.d

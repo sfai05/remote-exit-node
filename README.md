@@ -28,15 +28,18 @@ flowchart LR
 | DuckDNS | Dynamic DNS for the WireGuard endpoint | systemd timer; token never in argv or world-readable files |
 | DNS | `unbound` for WireGuard clients | Lookups exit from the remote IP: no DNS leak, correct geo-CDN |
 | SSH | Key-only hardening; optional `sshguard` | For "SSH via DuckDNS", prefer SSH *through* WireGuard (see below) |
-| Monitoring | Hardware watchdog; optional heartbeat (healthchecks.io) carrying the node self-check, `/fail` on broken services | Alerts mean "service broken", not just "box off" |
-| Doctor | `scripts/doctor.sh`: node self-check + end-to-end test of the WireGuard port forward | Run any time, and before shipping |
-| LAN guard | Tunnel clients (WireGuard **and** Tailscale exit node) are blocked from the node's LAN | Private ranges + the LAN's actual IPv4/IPv6 prefixes, refreshed every 5 min |
+| Monitoring | Hardware watchdog; optional heartbeat (healthchecks.io) carrying the node-side self-check, `/fail` on broken services or a down `expect_connected` client | Node-side only: proving traffic through each tunnel needs a client-side monitor |
+| Doctor | `scripts/doctor.sh`: node self-check + probe that UDP to the endpoint reaches the node | Run any time, and before shipping |
+| LAN guard | Tunnel clients (WireGuard **and** Tailscale exit node) are blocked from the node's LAN | Private ranges + the LAN's on-link IPv4/IPv6 prefixes (refreshed every 2 min) + `lan_guard_extra_*`. Forwarding stays off until the rules load (fail-closed) |
 | Baseline | BBR (node's own TCP only), IPv4/IPv6 forwarding, journald cap, low swappiness, time sync, locales, security-only auto-updates with nightly reboot | eMMC friendly, no Docker |
 | Manual | `artifacts/<node>/MANUAL.md` generated on every run | Everything needed to operate the node, incl. all WireGuard client configs |
 
-Safety defaults: tunnel clients are blocked from the remote LAN (`lan_guard_block`; verify it
-with the acceptance tests in step 6), IPv6 is tunnelled (or black-holed) so it can't leak
-your real location, and every secret lives in `ansible-vault` or the gitignored `.env`.
+Safety defaults: tunnel clients are blocked from the private ranges and the LAN prefixes the
+node sees on its own interface (`lan_guard_block`). IPv6 subnets the remote router routes
+elsewhere are not visible to the node: add them to `lan_guard_extra_ipv6`, or set
+`lan_guard_forward_ipv6: false`, and verify with the acceptance tests in step 6. IPv6 is
+tunnelled (or black-holed) so it can't leak your real location, and every secret lives in
+`ansible-vault` or the gitignored `.env`.
 
 ## Limitations
 
@@ -44,7 +47,8 @@ your real location, and every secret lives in `ansible-vault` or the gitignored 
   router's WAN IP differs from `curl -4 ifconfig.me` on the remote network, the ISP uses CGNAT
   (no fix; set `enable_wireguard: false` and `enable_duckdns: false`, Tailscale still works)
   or there is a second router in front (forward the port on both). `scripts/doctor.sh` run
-  from outside that network gives the definitive answer.
+  from outside that network shows whether UDP reaches the node; a client handshake confirms
+  the tunnel itself.
 - **WAN IP changes**: DuckDNS follows within 5 minutes, but a router-based WireGuard client
   (e.g. UniFi) may only re-resolve the hostname when its tunnel restarts. Test this before
   relying on it; `server_keepalive` on that peer may let it recover by itself.
@@ -136,7 +140,8 @@ In **Machines** → the node → `…` menu:
   `tailscale set --exit-node=`.
 - SSH: `tailscale ssh "$NODE_USER@$NODE"`.
 
-Exit-node users can't reach the remote site's LAN (LAN guard). With the default allow-all
+Exit-node users are blocked from the remote site's LAN ranges (LAN guard, see its limits above).
+With the default allow-all
 policy the node itself can still reach your other tailnet devices; restrict that with
 Tailscale grants if you share the tailnet or worry about the box being compromised.
 
@@ -181,8 +186,10 @@ Fine-tuning: add any setting to `host_vars/$NODE/vars.yml` (see `group_vars/all.
 | `enable_*` | see file | Turn tracks on/off |
 | `wireguard_port` | `51822` | Any free UDP port on the remote router. Client configs omit `ListenPort`, so the server port can't clash with other tunnels on the client side |
 | `wireguard_ipv4_network` / `_ipv6_network` | `10.88.0.0/24` / `fd88:88::/64` | Must not overlap your LAN, the remote LAN, or `100.64.0.0/10` |
-| `wireguard_peers` | `[]` | One entry per client: `name`, `ipv4`, `ipv6`, keys, optional `allowed_ips`, `mtu`, `keepalive`, `server_keepalive` (set e.g. `25` on an always-on router peer only) |
+| `wireguard_peers` | `[]` | One entry per client: `name`, `ipv4`, `ipv6`, keys, optional `allowed_ips`, `mtu`, `keepalive`, `server_keepalive` and `expect_connected: true` (both for an always-on router peer only; the latter makes the self-check fail when it's down) |
 | `lan_guard_block` | `true` | Block WireGuard and Tailscale exit-node clients from the node's LAN |
+| `lan_guard_extra_ipv4` / `_ipv6` | `[]` | Extra remote-site ranges to block that the node can't see on its interface |
+| `lan_guard_forward_ipv6` | `true` | `false` = never forward IPv6 (clients' IPv6 black-holed, no IPv6 LAN reachable) |
 | `duckdns_domain` | `""` | Subdomain only |
 | `node_timezone` | `UTC` | |
 | `node_hostname` | `""` | Set to rename the system hostname; empty leaves it alone. The Tailscale name is `tailscale_hostname` (default: inventory name) |
@@ -251,9 +258,11 @@ scripts/doctor.sh                 # node self-check + WireGuard port-forward tes
 ```
 
 The port-forward test sends a few UDP probes to the DuckDNS endpoint and checks that the
-node counted them. Run it from **outside** the remote network (e.g. a phone hotspot);
-from inside, most routers don't loop traffic back and the result is inconclusive. The node
-also runs the self-check in every heartbeat (`exit-node-doctor` on the node).
+node's firewall counted them. That proves UDP reaches the node, not that a tunnel works: for
+that, connect a client and look for its handshake. Run it from **outside** the remote network
+(e.g. a phone hotspot); from inside, most routers don't loop traffic back and the result is
+inconclusive. The heartbeat runs the same node-side self-check; for real end-to-end
+monitoring, ping the node through each tunnel from a machine on the client side.
 
 Acceptance tests before the box leaves your hands, and again on site:
 

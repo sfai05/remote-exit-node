@@ -1,18 +1,30 @@
 #!/bin/sh
-# Managed by Ansible. Loads the guard table if missing, then refreshes the LAN's on-link prefixes,
-# including any ISP-assigned global IPv6 prefix that the static ranges can't know about.
+# Managed by Ansible. Loads the guard table, refreshes the LAN's on-link prefixes (incl. any
+# ISP-assigned global IPv6 prefix) and only then enables IP forwarding, so the exit node
+# fails closed: no guard rules, no forwarding.
+# Usage: exit-node-lan-guard [--reload]   (--reload: forwarding off, reload ruleset, refresh)
 set -eu
 NIC={{ node_wan_interface }}
 T="inet exit_node_guard"
 
-nft list table $T >/dev/null 2>&1 || nft -f /etc/exit-node/guard.nft
+if [ "${1:-}" = "--reload" ]; then
+    sysctl -qw net.ipv4.ip_forward=0 net.ipv6.conf.all.forwarding=0
+    nft -f /etc/exit-node/guard.nft
+elif ! nft list table $T >/dev/null 2>&1; then
+    sysctl -qw net.ipv4.ip_forward=0 net.ipv6.conf.all.forwarding=0
+    nft -f /etc/exit-node/guard.nft
+fi
 
 v4=$(ip -4 route show dev "$NIC" scope link | awk '{print $1}' | sort -u | paste -sd, -)
 v6=$(ip -6 route show dev "$NIC" | awk '$1 != "default" && $1 !~ /^fe80/ {print $1}' | sort -u | paste -sd, -)
 
+# One nft run = one atomic transaction: the sets are never observed empty.
 {
     echo "flush set $T lan_v4"
     echo "flush set $T lan_v6"
     [ -z "$v4" ] || echo "add element $T lan_v4 { $v4 }"
     [ -z "$v6" ] || echo "add element $T lan_v6 { $v6 }"
 } | nft -f -
+
+sysctl -qw net.ipv4.ip_forward=1
+sysctl -qw net.ipv6.conf.all.forwarding={{ 1 if lan_guard_forward_ipv6 | bool else 0 }}

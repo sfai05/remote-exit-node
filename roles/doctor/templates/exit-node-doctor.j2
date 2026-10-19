@@ -31,7 +31,7 @@ if [ -z "$failed" ]; then ok "no failed systemd units"; else warn "failed units:
 
 {% if enable_tailscale | bool %}
 state=$(tailscale status --json 2>/dev/null | python3 -c 'import json, sys; print(json.load(sys.stdin).get("BackendState", ""))' 2>/dev/null)
-if [ "$state" = Running ]; then ok "Tailscale logged in and running"; else fail "Tailscale state: ${state:-unknown}"; fi
+if [ "$state" = Running ]; then ok "tailscaled logged in and running"; else fail "Tailscale state: ${state:-unknown}"; fi
 
 {% endif %}
 if [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" = yes ]; then ok "clock synchronized"; else warn "clock not NTP-synchronized"; fi
@@ -58,10 +58,14 @@ if nft list table inet exit_node_guard >/dev/null 2>&1; then
     lan=$(for s in lan_v4 lan_v6; do nft list set inet exit_node_guard "$s"; done 2>/dev/null \
         | tr -d '\n' | grep -o 'elements = {[^}]*}' | sed 's/elements = { *//; s/ *}//' | tr -s ', \t' ' ' | paste -sd' ' -)
     ok "LAN guard loaded"
-    info "LAN prefixes blocked for tunnel clients: ${lan:-none detected}"
+    info "LAN prefixes blocked for tunnel clients: ${lan:-none detected} (plus private ranges{{ ' and lan_guard_extra_*' if (lan_guard_extra_ipv4 + lan_guard_extra_ipv6) | length > 0 else '' }})"
 else
     fail "LAN guard table missing"
 fi
+
+# lan_guard turns forwarding on only after its rules load; off = exit traffic stopped (fail-closed).
+if [ "$(sysctl -n net.ipv4.ip_forward)" = 1 ]; then ok "IPv4 forwarding on"; else fail "IPv4 forwarding off: exit traffic stopped (check exit-node-lan-guard.service)"; fi
+info "IPv6 forwarding: $( [ "$(sysctl -n net.ipv6.conf.all.forwarding)" = 1 ] && echo on || echo off)"
 
 {% if enable_wireguard | bool %}
 declare -A peer_name=(
@@ -69,22 +73,35 @@ declare -A peer_name=(
     ["{{ peer.public_key }}"]="{{ peer.name }}"
 {% endfor %}
 )
+expected=" {{ wireguard_peers | selectattr('expect_connected', 'defined') | selectattr('expect_connected') | map(attribute='name') | join(' ') }} "
 now=$(date +%s)
-connected=0
+ever=0
+active=0
+# Clients send keepalives every {{ wireguard_keepalive }}s and re-handshake every 2 min while up.
 while read -r key ts; do
     name=${peer_name[$key]:-unknown}
     if [ "$ts" -eq 0 ]; then
         info "WireGuard $name: no handshake since the interface came up"
+        state=never
+    elif [ $((now - ts)) -le 180 ]; then
+        ever=1; active=$((active + 1))
+        info "WireGuard $name: connected (handshake $(ago $((now - ts))) ago)"
+        state=active
     else
-        connected=1
-        info "WireGuard $name: last handshake $(ago $((now - ts))) ago"
+        ever=1
+        info "WireGuard $name: idle, last handshake $(ago $((now - ts))) ago"
+        state=idle
     fi
+    case $expected in *" $name "*) [ "$state" = active ] || fail "WireGuard $name is expected to stay connected but is $state" ;; esac
 done < <(wg show {{ wireguard_interface }} latest-handshakes 2>/dev/null)
-if [ "$connected" = 1 ]; then
-    ok "WireGuard: a client has connected"
+if [ "$active" -gt 0 ]; then
+    ok "WireGuard: $active client(s) connected now"
+elif [ "$ever" = 1 ]; then
+    info "WireGuard: no client connected right now"
 else
     warn "WireGuard: no client has connected yet. Check the router forwards UDP {{ wireguard_port }} to this node (test: scripts/doctor.sh from outside this network)"
 fi
 
 {% endif %}
+info "These are node-side checks; traffic through each tunnel is only proven by a client-side test."
 exit "$rc"

@@ -76,7 +76,7 @@ ask WG_PEERS "WireGuard clients, space separated, e.g. 'unifi phone'"
 WG_ENDPOINT=${WG_ENDPOINT-}
 if [ -n "$WG_PEERS" ]; then
     command -v wg >/dev/null || die "wg not found: brew install wireguard-tools"
-    ask WG_PORT "WireGuard UDP port (must not clash with other WireGuard on your gateway)" 51822 required
+    ask WG_PORT "WireGuard UDP port (any free UDP port on the remote router)" 51822 required
     [[ $WG_PORT =~ ^[0-9]+$ ]] && [ "$WG_PORT" -ge 1 ] && [ "$WG_PORT" -le 65535 ] || die "WG_PORT: 1-65535"
     for p in $WG_PEERS; do
         [[ $p =~ ^[A-Za-z0-9_-]+$ ]] || die "peer '$p': letters, digits, - and _ only"

@@ -41,3 +41,7 @@
     name: exit-node-lan-guard.timer
     enabled: true
     state: started
+
+# Apply now (and switch forwarding on) before the tunnel roles run.
+- name: Apply LAN guard changes
+  ansible.builtin.meta: flush_handlers

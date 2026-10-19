@@ -7,19 +7,23 @@ table inet exit_node_guard {
     counter wg_probe {
     }
 
+{% set static4 = lan_guard_static_ipv4 + lan_guard_extra_ipv4 %}
+{% set static6 = lan_guard_static_ipv6 + lan_guard_extra_ipv6 %}
     set static_v4 {
         type ipv4_addr
         flags interval
-{% if lan_guard_static_ipv4 | length > 0 %}
-        elements = { {{ lan_guard_static_ipv4 | join(', ') }} }
+        auto-merge
+{% if static4 | length > 0 %}
+        elements = { {{ static4 | join(', ') }} }
 {% endif %}
     }
 
     set static_v6 {
         type ipv6_addr
         flags interval
-{% if lan_guard_static_ipv6 | length > 0 %}
-        elements = { {{ lan_guard_static_ipv6 | join(', ') }} }
+        auto-merge
+{% if static6 | length > 0 %}
+        elements = { {{ static6 | join(', ') }} }
 {% endif %}
     }
 

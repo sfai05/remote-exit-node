@@ -10,5 +10,10 @@ lan_guard_static_ipv4:
 lan_guard_static_ipv6:
   - fc00::/7
   - fe80::/10
+# Site-specific ranges the node can't detect, e.g. other routed IPv6 subnets behind the router.
+lan_guard_extra_ipv4: []
+lan_guard_extra_ipv6: []
+# false = never forward IPv6: clients' IPv6 is black-holed and no IPv6 LAN can be reached.
+lan_guard_forward_ipv6: true
 # The LAN's actual on-link prefixes (incl. ISP-assigned global IPv6) are re-read this often.
-lan_guard_refresh_interval: 5min
+lan_guard_refresh_interval: 2min
