@@ -1,22 +1,30 @@
 #!/bin/sh
 # Managed by Ansible. Loads the guard table, refreshes the LAN's on-link prefixes (incl. any
 # ISP-assigned global IPv6 prefix) and only then enables IP forwarding, so the exit node
-# fails closed: no guard rules, no forwarding.
+# fails closed: no guard rules or no prefixes, no forwarding.
 # Usage: exit-node-lan-guard [--reload]   (--reload: forwarding off, reload ruleset, refresh)
 set -eu
 NIC={{ node_wan_interface }}
 T="inet exit_node_guard"
 
-if [ "${1:-}" = "--reload" ]; then
-    sysctl -qw net.ipv4.ip_forward=0 net.ipv6.conf.all.forwarding=0
-    nft -f /etc/exit-node/guard.nft
-elif ! nft list table $T >/dev/null 2>&1; then
+die() { echo "exit-node-lan-guard: $*; keeping the current sets" >&2; exit 1; }
+
+if [ "${1:-}" = "--reload" ] || ! nft list table $T >/dev/null 2>&1; then
+    # Initial load / reload: forwarding stays off unless everything below succeeds.
     sysctl -qw net.ipv4.ip_forward=0 net.ipv6.conf.all.forwarding=0
     nft -f /etc/exit-node/guard.nft
 fi
 
-v4=$(ip -4 route show dev "$NIC" scope link | awk '{print $1}' | sort -u | paste -sd, -)
-v6=$(ip -6 route show dev "$NIC" | awk '$1 != "default" && $1 !~ /^fe80/ {print $1}' | sort -u | paste -sd, -)
+# Query separately: in a pipeline a failing `ip` would be masked by the last command.
+routes4=$(ip -4 route show dev "$NIC" scope link) || die "cannot read IPv4 routes of $NIC"
+routes6=$(ip -6 route show dev "$NIC") || die "cannot read IPv6 routes of $NIC"
+
+# A successful query with no matching routes legitimately yields an empty list.
+v4=$(printf '%s\n' "$routes4" | awk 'NF {print $1}' | sort -u | paste -sd, -)
+v6=$(printf '%s\n' "$routes6" | awk 'NF && $1 != "default" && $1 !~ /^fe80/ {print $1}' | sort -u | paste -sd, -)
+case "$v4,$v6" in
+    *[!0-9a-fA-F:./,]*) die "unexpected route output: $v4 $v6" ;;
+esac
 
 # One nft run = one atomic transaction: the sets are never observed empty.
 {

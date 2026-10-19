@@ -62,44 +62,63 @@ if nft list table inet exit_node_guard >/dev/null 2>&1; then
 else
     fail "LAN guard table missing"
 fi
+if systemctl is-failed --quiet exit-node-lan-guard.service; then
+    fail "LAN guard refresh failed; previous prefixes kept (journalctl -u exit-node-lan-guard)"
+fi
 
 # lan_guard turns forwarding on only after its rules load; off = exit traffic stopped (fail-closed).
 if [ "$(sysctl -n net.ipv4.ip_forward)" = 1 ]; then ok "IPv4 forwarding on"; else fail "IPv4 forwarding off: exit traffic stopped (check exit-node-lan-guard.service)"; fi
 info "IPv6 forwarding: $( [ "$(sysctl -n net.ipv6.conf.all.forwarding)" = 1 ] && echo on || echo off)"
 
 {% if enable_wireguard | bool %}
-declare -A peer_name=(
-{% for peer in wireguard_peers %}
-    ["{{ peer.public_key }}"]="{{ peer.name }}"
-{% endfor %}
-)
-expected=" {{ wireguard_peers | selectattr('expect_connected', 'defined') | selectattr('expect_connected') | map(attribute='name') | join(' ') }} "
-now=$(date +%s)
-ever=0
-active=0
 # Clients send keepalives every {{ wireguard_keepalive }}s and re-handshake every 2 min while up.
-while read -r key ts; do
-    name=${peer_name[$key]:-unknown}
-    if [ "$ts" -eq 0 ]; then
-        info "WireGuard $name: no handshake since the interface came up"
-        state=never
-    elif [ $((now - ts)) -le 180 ]; then
-        ever=1; active=$((active + 1))
-        info "WireGuard $name: connected (handshake $(ago $((now - ts))) ago)"
-        state=active
+if hs=$(wg show {{ wireguard_interface }} latest-handshakes 2>/dev/null); then
+    declare -A peer_ts=()
+    while read -r key ts; do [ -z "$key" ] || peer_ts[$key]=$ts; done <<< "$hs"
+    now=$(date +%s)
+    ever=0
+    active=0
+
+    # Checks a peer from the Ansible config against the running interface.
+    check_peer() {
+        local name=$1 key=$2 expected=$3 ts pstate
+        if [ -z "${peer_ts[$key]+x}" ]; then
+            pstate=missing
+        else
+            ts=${peer_ts[$key]}
+            unset "peer_ts[$key]"
+            if [ "$ts" -eq 0 ]; then
+                pstate=never
+                info "WireGuard $name: no handshake since the interface came up"
+            elif [ $((now - ts)) -le 180 ]; then
+                pstate=active; ever=1; active=$((active + 1))
+                info "WireGuard $name: connected (handshake $(ago $((now - ts))) ago)"
+            else
+                pstate=idle; ever=1
+                info "WireGuard $name: idle, last handshake $(ago $((now - ts))) ago"
+            fi
+        fi
+        if [ "$expected" = 1 ] && [ "$pstate" != active ]; then
+            fail "WireGuard $name is expected to stay connected but is $pstate"
+        elif [ "$pstate" = missing ]; then
+            warn "WireGuard $name is configured but not loaded on {{ wireguard_interface }}"
+        fi
+    }
+{% for peer in wireguard_peers %}
+    check_peer {{ peer.name | quote }} {{ peer.public_key | quote }} {{ 1 if peer.expect_connected | default(false) | bool else 0 }}
+{% endfor %}
+
+    for key in "${!peer_ts[@]}"; do warn "WireGuard: unknown peer $key loaded on {{ wireguard_interface }}"; done
+
+    if [ "$active" -gt 0 ]; then
+        ok "WireGuard: $active client(s) connected now"
+    elif [ "$ever" = 1 ]; then
+        info "WireGuard: no client connected right now"
     else
-        ever=1
-        info "WireGuard $name: idle, last handshake $(ago $((now - ts))) ago"
-        state=idle
+        warn "WireGuard: no client has connected yet. Check the router forwards UDP {{ wireguard_port }} to this node (test: scripts/doctor.sh from outside this network)"
     fi
-    case $expected in *" $name "*) [ "$state" = active ] || fail "WireGuard $name is expected to stay connected but is $state" ;; esac
-done < <(wg show {{ wireguard_interface }} latest-handshakes 2>/dev/null)
-if [ "$active" -gt 0 ]; then
-    ok "WireGuard: $active client(s) connected now"
-elif [ "$ever" = 1 ]; then
-    info "WireGuard: no client connected right now"
 else
-    warn "WireGuard: no client has connected yet. Check the router forwards UDP {{ wireguard_port }} to this node (test: scripts/doctor.sh from outside this network)"
+    fail "cannot read WireGuard state of {{ wireguard_interface }}"
 fi
 
 {% endif %}
