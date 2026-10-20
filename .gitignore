@@ -9,6 +9,7 @@ group_vars/**/vault*.yml
 vault-password*
 
 # Tooling
+.DS_Store
 *.retry
 .venv/
 __pycache__/
