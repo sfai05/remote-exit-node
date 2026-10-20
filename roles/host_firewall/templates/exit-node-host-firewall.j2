@@ -1,0 +1,29 @@
+#!/bin/sh
+# Managed by Ansible. Lets exit-node traffic past the image's own iptables rules (e.g. Oracle
+# Cloud images REJECT everything else). Only manages the EXITNODE-* chains and one jump into
+# each; never flushes or reorders existing rules. LAN isolation stays in the lan_guard table.
+set -eu
+WG={{ wireguard_interface }}
+NIC={{ node_wan_interface }}
+
+for family in 4 6; do
+    if [ "$family" = 4 ]; then ipt=iptables; else ipt=ip6tables; fi
+    # Declaring a chain in --noflush mode (re)creates and empties only that chain, atomically.
+    "$ipt-restore" --noflush <<EOF
+*filter
+:EXITNODE-IN - [0:0]
+:EXITNODE-FWD - [0:0]
+{% if enable_wireguard | bool %}
+-A EXITNODE-IN -i $NIC -p udp --dport {{ wireguard_port }} -j ACCEPT
+{% if enable_dns | bool %}
+-A EXITNODE-IN -i $WG -p udp --dport 53 -j ACCEPT
+-A EXITNODE-IN -i $WG -p tcp --dport 53 -j ACCEPT
+{% endif %}
+-A EXITNODE-FWD -i $WG -o $NIC -j ACCEPT
+-A EXITNODE-FWD -i $NIC -o $WG -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+{% endif %}
+COMMIT
+EOF
+    "$ipt" -C INPUT -j EXITNODE-IN 2>/dev/null || "$ipt" -I INPUT 1 -j EXITNODE-IN
+    "$ipt" -C FORWARD -j EXITNODE-FWD 2>/dev/null || "$ipt" -I FORWARD 1 -j EXITNODE-FWD
+done

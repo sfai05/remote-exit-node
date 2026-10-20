@@ -22,9 +22,23 @@ warn() { printf 'WARN  %s\n' "$*"; [ "$rc" -ge 1 ] || rc=1; }
 fail() { printf 'FAIL  %s\n' "$*"; rc=2; }
 ago()  { local s=$1; if [ "$s" -lt 120 ]; then echo "${s}s"; elif [ "$s" -lt 7200 ]; then echo "$((s / 60))m"; else echo "$((s / 3600))h"; fi; }
 
+# Socket-activated sshd (Ubuntu 22.10+) only runs ssh.service once someone connects.
+if systemctl is-active --quiet ssh.socket || systemctl is-active --quiet ssh.service; then ok "sshd listening"; else fail "sshd not listening (ssh.socket / ssh.service)"; fi
+
 for unit in {{ doctor_units | join(' ') }}; do
     if systemctl is-active --quiet "$unit"; then ok "$unit active"; else fail "$unit not active"; fi
 done
+{% if host_firewall_iptables | bool %}
+
+# Saved image rules (netfilter-persistent) can be reloaded on top and drop our jumps.
+for ipt in iptables ip6tables; do
+    if "$ipt" -C INPUT -j EXITNODE-IN 2>/dev/null && "$ipt" -C FORWARD -j EXITNODE-FWD 2>/dev/null; then
+        ok "$ipt: exit-node rules in place"
+    else
+        fail "$ipt: exit-node rules missing (systemctl restart exit-node-host-firewall)"
+    fi
+done
+{% endif %}
 
 failed=$(systemctl --failed --no-legend --plain | awk '{print $1}' | paste -sd' ' -)
 if [ -z "$failed" ]; then ok "no failed systemd units"; else warn "failed units: $failed"; fi
@@ -115,7 +129,7 @@ if hs=$(wg show {{ wireguard_interface }} latest-handshakes 2>/dev/null); then
     elif [ "$ever" = 1 ]; then
         info "WireGuard: no client connected right now"
     else
-        warn "WireGuard: no client has connected yet. Check the router forwards UDP {{ wireguard_port }} to this node (test: scripts/doctor.sh from outside this network)"
+        warn "WireGuard: no client has connected yet. {{ ('Check the cloud firewall (security list / NSG) allows UDP ' ~ wireguard_port) if node_kind == 'cloud' else ('Check the router forwards UDP ' ~ wireguard_port ~ ' to this node') }} (test: scripts/doctor.sh from outside this network)"
     fi
 else
     fail "cannot read WireGuard state of {{ wireguard_interface }}"

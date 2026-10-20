@@ -11,12 +11,17 @@ enable_ssh_public: false # only if you port-forward SSH from the internet
 enable_monitoring: true
 
 # Identity
+# home = box behind a residential router (port forward, DHCP); cloud = VM with a public IP.
+node_kind: home
 node_hostname: "" # empty = leave the system hostname alone
 node_timezone: UTC
 node_wan_interface: "{{ ansible_facts['default_ipv4']['interface'] }}"
 
 # Generated files with secrets (client configs, MANUAL.md) on the control node; gitignored.
 artifacts_dir: "{{ playbook_dir }}/artifacts/{{ inventory_hostname }}"
+
+# Integrate with an image's own restrictive iptables rules (Oracle Cloud images need this).
+host_firewall_iptables: false
 
 # Tailscale
 tailscale_hostname: "{{ inventory_hostname }}"

@@ -2,9 +2,9 @@
 - name: Check target platform
   ansible.builtin.assert:
     that:
-      - ansible_facts['distribution'] == 'Debian'
+      - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
       - ansible_facts['default_ipv4']['interface'] is defined
-    fail_msg: "Only Debian with a default IPv4 route is supported."
+    fail_msg: "Only Debian or Ubuntu with a default IPv4 route is supported."
 
 - name: Set hostname
   ansible.builtin.hostname:
@@ -119,3 +119,15 @@
     src: 52exit-node-unattended-upgrades.j2
     dest: /etc/apt/apt.conf.d/52exit-node-unattended-upgrades
     mode: "0644"
+
+- name: Read effective APT configuration
+  ansible.builtin.command: apt-config dump
+  register: baseline_apt_config
+  changed_when: false
+
+- name: Check only security origins remain
+  ansible.builtin.assert:
+    that:
+      - "'Unattended-Upgrade::Allowed-Origins::' not in baseline_apt_config.stdout"
+      - "'-security' in baseline_apt_config.stdout"
+    fail_msg: "Another apt.conf.d file still adds update origins; check apt-config dump."

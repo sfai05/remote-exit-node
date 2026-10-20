@@ -1,9 +1,16 @@
-// Managed by Ansible.
-// Replaces Debian's default origin list (which also pulls point releases).
+// Managed by Ansible. Security updates only: replaces the distro's default origin lists
+// (Debian's also pulls point releases; Ubuntu's Allowed-Origins also pulls the release pocket).
+#clear Unattended-Upgrade::Allowed-Origins;
 #clear Unattended-Upgrade::Origins-Pattern;
 Unattended-Upgrade::Origins-Pattern {
+{% if ansible_facts['distribution'] == 'Ubuntu' %}
+        "origin=Ubuntu,archive=${distro_codename}-security,label=Ubuntu";
+        "origin=UbuntuESMApps,archive=${distro_codename}-apps-security";
+        "origin=UbuntuESM,archive=${distro_codename}-infra-security";
+{% else %}
         "origin=Debian,codename=${distro_codename},label=Debian-Security";
         "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+{% endif %}
 {% for origin in baseline_unattended_extra_origins %}
         "{{ origin }}";
 {% endfor %}

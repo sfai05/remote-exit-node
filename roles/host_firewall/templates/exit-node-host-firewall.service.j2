@@ -1,0 +1,15 @@
+[Unit]
+Description=Allow exit-node traffic through the host iptables rules
+# Must run after the image's saved rules are restored, or they would be loaded on top;
+# PartOf re-applies the jumps whenever those saved rules are reloaded.
+After=netfilter-persistent.service
+PartOf=netfilter-persistent.service
+Before=wg-quick@{{ wireguard_interface }}.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/exit-node-host-firewall
+
+[Install]
+WantedBy=multi-user.target

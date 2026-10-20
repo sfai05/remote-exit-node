@@ -52,29 +52,49 @@ tunnelled (or black-holed) so it can't leak your real location, and every secret
 - **WAN IP changes**: DuckDNS follows within 5 minutes, but a router-based WireGuard client
   (e.g. UniFi) may only re-resolve the hostname when its tunnel restarts. Test this before
   relying on it; `server_keepalive` on that peer may let it recover by itself.
-- Debian only (tested on 13 "trixie").
+- Debian 13 or Ubuntu 24.04 (tested: Debian on a Dell Wyse 3040, Ubuntu on an Oracle Cloud
+  Arm VM). Other distros, e.g. Oracle Linux, are not supported.
 - Traffic leaves from the host's internet connection. Agree on that with them up front.
+
+## Cloud nodes (e.g. Oracle Cloud)
+
+The same playbook manages a VM with a public IP; answer `cloud` for the node kind in
+`scripts/setup.sh`. Differences from a home node:
+
+- No DuckDNS: the endpoint is the VM's public IP (an OCI ephemeral IP survives stop/start).
+- `host_firewall_iptables: true`: Oracle's images ship iptables rules that reject forwarding
+  and most inbound traffic. The `host_firewall` role adds only its own `EXITNODE-*` chains with
+  one jump each at the top of INPUT/FORWARD (WireGuard UDP, DNS from the tunnel, forwarding),
+  re-applied whenever the saved rules are reloaded. It never flushes or edits Oracle's rules.
+- The provider's firewall (OCI security list / NSG) is not managed: allow the WireGuard UDP
+  port there yourself. Close TCP 22 once Tailscale SSH works.
+- No hardware watchdog (`monitoring_watchdog_enabled` defaults to off for `cloud`).
+- Give every node its own WireGuard subnet (`setup.sh` asks: `10.88.0`, `10.89.0`, …), so a
+  router with tunnels to several nodes doesn't get overlapping addresses.
+- Replacing a hand-built VPN server: build a **new** instance and move clients over, rather
+  than running the playbook on top of an existing setup (it would replace keys, subnet and port).
 
 ## Repository layout
 
 ```
 ansible.cfg
 site.yml
-.env.example                   -> optional .env (gitignored) to pre-answer scripts/setup.sh
+.env.example                   -> optional .env / .env.<node> (gitignored) to pre-answer scripts/setup.sh
 inventory.example.ini          reference; scripts/setup.sh writes inventory.ini (gitignored)
 group_vars/all.yml             shared defaults + feature toggles (no secrets)
 examples/host_vars/my-node/    reference; scripts/setup.sh writes host_vars/$NODE/ (gitignored)
 roles/
-  baseline/  ssh/  tailscale/  wireguard/  dns/  duckdns/  monitoring/  manual/
+  baseline/  ssh/  lan_guard/  host_firewall/  tailscale/  wireguard/  dns/  duckdns/
+  doctor/  monitoring/  manual/
 scripts/setup.sh               interactive setup: inventory, vars, encrypted vault, SSH key
 scripts/wg-keys.sh             generate extra WireGuard keys as vault YAML (stdout only)
-scripts/doctor.sh              health check incl. end-to-end WireGuard port-forward test
+scripts/doctor.sh              health check: node self-check + UDP probe to the WireGuard endpoint
 artifacts/                     generated client configs + MANUAL.md (gitignored, contain private keys)
 ```
 
 ## Secrets and this public repo
 
-- `.env`, `inventory.ini`, `host_vars/`, `artifacts/` and any `vault*.yml` under `group_vars/` are gitignored.
+- `.env` / `.env.*`, `inventory.ini`, `host_vars/`, `artifacts/` and any `vault*.yml` under `group_vars/` are gitignored.
 - `.env` holds your answers including tokens (Tailscale key, DuckDNS token, heartbeat URL),
   but never the sudo password. Back it up privately (e.g. 1Password) together with the vault
   password and `artifacts/<node>/MANUAL.md`.
@@ -88,7 +108,7 @@ artifacts/                     generated client configs + MANUAL.md (gitignored,
 |---|---|
 | Node name | e.g. `exit-node`; used for the inventory, `host_vars/`, and Tailscale hostname |
 | Node host | LAN IP or hostname reachable from your Mac during setup (check: `ping -c1 <host>`). A LAN IP is the most reliable; hostnames depend on your router's DNS (UniFi registers DHCP names) or mDNS (`<name>.local`, needs `avahi-daemon` on the node) |
-| Node user + sudo password | The Debian user you created at install |
+| Node user + sudo password | The user you created at install (cloud images: e.g. `ubuntu` with passwordless sudo; leave the password empty) |
 | Tailscale auth key | See step 2 |
 | DuckDNS subdomain + token | Free: sign in at https://www.duckdns.org (GitHub/Google/…), add a subdomain (the IP shown doesn't matter, the node updates it), copy the **token** at the top. Skip if you don't use WireGuard |
 | WireGuard client names | One per device that connects without Tailscale, e.g. `unifi phone`. Each gets its own config + keys |
@@ -100,7 +120,7 @@ pipx install --include-deps ansible       # or: brew install ansible
 brew install wireguard-tools qrencode     # wg for key generation, qrencode for phone QR codes
 ```
 
-On the node: Debian installed, SSH enabled, a sudo user. The setup script (step 3) creates
+On the node: Debian or Ubuntu installed, SSH enabled, a sudo user. The setup script (step 3) creates
 and copies the SSH key. The playbook then disables SSH password login (keep it with
 `ssh_password_auth: true`), and refuses to if the login user has no `authorized_keys`.
 
@@ -150,6 +170,9 @@ Tailscale grants if you share the tailnet or worry about the box being compromis
 ```bash
 cp .env.example .env && code .env      # optional: pre-fill answers
 scripts/setup.sh
+
+# More than one node: one env file each
+scripts/setup.sh --env .env.oracle
 ```
 
 The script asks for anything not set in `.env`, then:
@@ -254,7 +277,8 @@ sed -i '' "/^$NODE /s/ansible_host=[^ ]*/ansible_host=$NODE/" inventory.ini   # 
 ## 6. Verify
 
 ```bash
-scripts/doctor.sh                 # node self-check + WireGuard port-forward test
+scripts/doctor.sh                 # node self-check + UDP probe to the WireGuard endpoint
+scripts/doctor.sh --env .env.oracle   # another node
 ```
 
 The port-forward test sends a few UDP probes to the DuckDNS endpoint and checks that the

@@ -1,5 +1,7 @@
 # Per-deployment config and secrets — never commit.
 .env
+.env.*
+!.env.example
 /inventory.ini
 /host_vars/
 group_vars/**/vault*.yml
