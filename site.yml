@@ -12,7 +12,6 @@
       tags: [lan_guard]
     - role: host_firewall
       tags: [host_firewall]
-      when: host_firewall_iptables | bool
     - role: tailscale
       tags: [tailscale]
       when: enable_tailscale | bool

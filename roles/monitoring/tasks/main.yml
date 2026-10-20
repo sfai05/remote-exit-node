@@ -1,10 +1,16 @@
 ---
+- name: Check for a hardware watchdog
+  ansible.builtin.stat:
+    path: /dev/watchdog
+  register: monitoring_watchdog_dev
+  tags: [always]
+
 - name: Create systemd drop-in directory
   ansible.builtin.file:
     path: /etc/systemd/system.conf.d
     state: directory
     mode: "0755"
-  when: monitoring_watchdog_enabled | bool
+  when: monitoring_watchdog_enabled | bool and monitoring_watchdog_dev.stat.exists
 
 - name: Enable hardware watchdog
   ansible.builtin.copy:
@@ -14,7 +20,7 @@
       RuntimeWatchdogSec={{ monitoring_watchdog_runtime_sec }}
       RebootWatchdogSec=2min
     mode: "0644"
-  when: monitoring_watchdog_enabled | bool
+  when: monitoring_watchdog_enabled | bool and monitoring_watchdog_dev.stat.exists
   notify: Reexec systemd
 
 - name: Configure heartbeat

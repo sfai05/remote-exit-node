@@ -1,29 +1,53 @@
 ---
-- name: Install iptables tools
-  ansible.builtin.apt:
-    name: iptables
-    state: present
+# Tagged always so --tags doctor/manual still know whether this integration is active.
+- name: Detect restrictive iptables rules
+  ansible.builtin.shell: |
+    set -o pipefail
+    command -v iptables >/dev/null || exit 0
+    { iptables -S INPUT; iptables -S FORWARD; } \
+      | grep -E '^-P (INPUT|FORWARD) DROP|^-A (INPUT|FORWARD) .*-j (REJECT|DROP)' || true
+  args:
+    executable: /bin/bash
+  register: host_firewall_detected
+  changed_when: false
+  when: host_firewall_iptables | string == 'auto'
+  tags: [always]
 
-- name: Install host firewall integration script
-  ansible.builtin.template:
-    src: exit-node-host-firewall.j2
-    dest: /usr/local/sbin/exit-node-host-firewall
-    mode: "0755"
-  notify: Apply host firewall
+- name: Decide on host firewall integration
+  ansible.builtin.set_fact:
+    host_firewall_enabled: >-
+      {{ (host_firewall_detected.stdout | default('') | length > 0)
+         if host_firewall_iptables | string == 'auto' else host_firewall_iptables | bool }}
+  tags: [always]
 
-- name: Install host firewall unit
-  ansible.builtin.template:
-    src: exit-node-host-firewall.service.j2
-    dest: /etc/systemd/system/exit-node-host-firewall.service
-    mode: "0644"
-  notify: Apply host firewall
+- name: Integrate with the host's iptables rules
+  when: host_firewall_enabled | bool
+  block:
+    - name: Install iptables tools
+      ansible.builtin.apt:
+        name: iptables
+        state: present
 
-- name: Enable host firewall integration
-  ansible.builtin.systemd_service:
-    name: exit-node-host-firewall.service
-    enabled: true
-    state: started
-    daemon_reload: true
+    - name: Install host firewall integration script
+      ansible.builtin.template:
+        src: exit-node-host-firewall.j2
+        dest: /usr/local/sbin/exit-node-host-firewall
+        mode: "0755"
+      notify: Apply host firewall
+
+    - name: Install host firewall unit
+      ansible.builtin.template:
+        src: exit-node-host-firewall.service.j2
+        dest: /etc/systemd/system/exit-node-host-firewall.service
+        mode: "0644"
+      notify: Apply host firewall
+
+    - name: Enable host firewall integration
+      ansible.builtin.systemd_service:
+        name: exit-node-host-firewall.service
+        enabled: true
+        state: started
+        daemon_reload: true
 
 # The tunnel roles that follow need these rules in place.
 - name: Apply host firewall changes

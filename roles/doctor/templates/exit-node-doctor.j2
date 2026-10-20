@@ -28,7 +28,7 @@ if systemctl is-active --quiet ssh.socket || systemctl is-active --quiet ssh.ser
 for unit in {{ doctor_units | join(' ') }}; do
     if systemctl is-active --quiet "$unit"; then ok "$unit active"; else fail "$unit not active"; fi
 done
-{% if host_firewall_iptables | bool %}
+{% if host_firewall_enabled | default(false) | bool %}
 
 # Saved image rules (netfilter-persistent) can be reloaded on top and drop our jumps.
 for ipt in iptables ip6tables; do
@@ -129,7 +129,7 @@ if hs=$(wg show {{ wireguard_interface }} latest-handshakes 2>/dev/null); then
     elif [ "$ever" = 1 ]; then
         info "WireGuard: no client connected right now"
     else
-        warn "WireGuard: no client has connected yet. {{ ('Check the cloud firewall (security list / NSG) allows UDP ' ~ wireguard_port) if node_kind == 'cloud' else ('Check the router forwards UDP ' ~ wireguard_port ~ ' to this node') }} (test: scripts/doctor.sh from outside this network)"
+        warn "WireGuard: no client has connected yet. Check inbound UDP {{ wireguard_port }} reaches this node: router port forward, or the provider firewall for a VM (test: scripts/doctor.sh from outside this network)"
     fi
 else
     fail "cannot read WireGuard state of {{ wireguard_interface }}"

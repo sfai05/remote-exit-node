@@ -70,17 +70,13 @@ if [ -n "${WG_PEERS:-}" ]; then
         echo "WARN  inconclusive: this machine shares the node's public IP ($my_ip)."
         echo "      Routers often don't loop traffic back to themselves; re-run from another network (e.g. phone hotspot)."
         [ "$rc" -ge 1 ] || rc=1
-    elif [ "${NODE_KIND:-home}" = cloud ]; then
-        echo "FAIL  probes did not reach the node. Check, in order:"
-        echo "      1. cloud firewall (OCI security list / NSG): ingress UDP $port from 0.0.0.0/0"
-        echo "      2. host firewall rules: see 'iptables: exit-node rules' in the self-check above"
-        echo "      3. the endpoint ($endpoint) is the VM's current public IP"
-        rc=2
     else
         echo "FAIL  probes did not reach the node. Check, in order:"
-        echo "      1. router port forward: UDP $port -> node's LAN IP, port $port"
-        echo "      2. DuckDNS points to the current WAN IP (see the self-check above)"
-        echo "      3. CGNAT or double NAT: router WAN IP differs from the public IPv4 above"
+        echo "      1. inbound UDP $port: home router port forward to the node, or the provider"
+        echo "         firewall for a VM (e.g. OCI security list / NSG)"
+        echo "      2. the node's own firewall: 'iptables: exit-node rules' in the self-check, if shown"
+        echo "      3. the endpoint ($endpoint) resolves to the node's current public IP"
+        echo "      4. behind a home router: CGNAT or double NAT (router WAN IP differs from the public IPv4 above)"
         rc=2
     fi
 fi
