@@ -39,6 +39,10 @@ wireguard_ipv6_server: "fd88:88::1"
 wireguard_server_private_key: "{{ vault_wireguard_server.private_key | default('') }}"
 wireguard_server_public_key: "{{ vault_wireguard_server.public_key | default('') }}"
 wireguard_peers: []
+# Per-peer extras, kept in your vars.yml (setup.sh never touches it), e.g.
+#   wg1: { server_keepalive: 25, expect_connected: true }
+# Keys: server_keepalive, expect_connected, allowed_ips, mtu, keepalive.
+wireguard_peer_options: {}
 
 # DuckDNS
 duckdns_domain: "" # subdomain only, e.g. "myexit" for myexit.duckdns.org

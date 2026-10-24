@@ -89,8 +89,8 @@ examples/host_vars/my-node/    reference; scripts/setup.sh writes host_vars/$NOD
 roles/
   baseline/  ssh/  lan_guard/  host_firewall/  tailscale/  wireguard/  dns/  duckdns/
   doctor/  monitoring/  manual/
-scripts/setup.sh               interactive setup: inventory, vars, encrypted vault, SSH key
-scripts/wg-keys.sh             generate extra WireGuard keys as vault YAML (stdout only)
+scripts/setup.sh               syncs host_vars/<node>/ with its env file (keys kept), inventory, SSH key
+scripts/reconcile.py           used by setup.sh: vault + generated vars, run with Ansible's Python
 scripts/doctor.sh              health check: node self-check + UDP probe to the WireGuard endpoint
 artifacts/                     generated client configs + MANUAL.md (gitignored, contain private keys)
 ```
@@ -170,49 +170,55 @@ Tailscale grants if you share the tailnet or worry about the box being compromis
 
 ## 3. Configure
 
-```bash
-cp .env.example .env && code .env      # optional: pre-fill answers
-scripts/setup.sh
+Each node's **env file is its source of truth**: `.env` or `.env.<node>` (gitignored). The
+workflow is the same for the first setup and every later change:
 
-# More than one node: one env file each
-scripts/setup.sh --env .env.oracle
+```bash
+code .env.mynode                                  # 1. edit (copy .env.example to start)
+scripts/setup.sh --env .env.mynode                # 2. sync host_vars/<node>/ with it
+ansible-playbook site.yml --limit mynode --ask-vault-pass   # 3. apply to the node
 ```
 
-The script asks for anything not set in `.env`, then:
+`setup.sh` asks for anything missing from the env file (and only writes the file the first
+time, so your comments stay). Then it:
 
 - creates the SSH key if missing and copies it to the node if key login doesn't work yet,
 - writes/updates this node's line in `inventory.ini`,
-- writes `host_vars/$NODE/vars.yml` (WireGuard clients get `10.88.0.2`, `.3`, …),
-- generates WireGuard keys for the server and every client,
-- writes `host_vars/$NODE/vault.yml` **encrypted**. You choose the vault password here; every
-  later `ansible-vault edit` / `--ask-vault-pass` asks for it, so keep it in your password manager,
-- saves the answers to `.env` (including tokens, never the sudo password) and installs the
-  Ansible collections.
+- keeps `host_vars/<node>/vault.yml` (encrypted) in sync: existing secrets and WireGuard keys
+  are **kept**; a peer new in `WG_PEERS` gets keys and the next free address; a peer removed
+  from `WG_PEERS` is revoked after you confirm. You choose the vault password on the first
+  run; every later run and `--ask-vault-pass` asks for it, so keep it in your password manager,
+- regenerates `host_vars/<node>/setup.yml` (don't edit it),
+- installs the Ansible collections.
 
-Re-running is safe: it asks before overwriting `vars.yml` or the vault. Overwriting the vault
-regenerates WireGuard keys, so existing client configs stop working.
+The decrypted vault only exists in memory. Secrets: a non-empty value in the env file wins,
+otherwise the vault's value is kept. Upgrading from the earlier one-file layout: the first run
+moves the generated part of `vars.yml` into `setup.yml`, keeps your own settings in `vars.yml`
+and leaves the old file as `vars.yml.old`.
 
-The remaining commands in this README use the `.env` values; load them into your shell with:
-
-```bash
-set -a; . ./.env; set +a
-```
-
-To change secrets later:
+The remaining commands in this README use the env file's values; load them with:
 
 ```bash
-EDITOR="code --wait" ansible-vault edit "host_vars/$NODE/vault.yml"   # decrypts into the editor, re-encrypts on close
+set -a; . ./.env.mynode; set +a
 ```
 
-Fine-tuning: add any setting to `host_vars/$NODE/vars.yml` (see `group_vars/all.yml` and
-`roles/*/defaults/main.yml` for all):
+Fine-tuning beyond the env file: put Ansible settings in `host_vars/<node>/vars.yml`. It
+overrides `setup.yml` and `setup.sh` never touches it (see `group_vars/all.yml` and
+`roles/*/defaults/main.yml` for all settings):
+
+```yaml
+# host_vars/mynode/vars.yml
+ssh_password_auth: true
+wireguard_peer_options:
+  unifi: { server_keepalive: 25, expect_connected: true }
+```
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `enable_*` | see file | Turn tracks on/off |
 | `wireguard_port` | `51822` | Any free UDP port on the remote router. Client configs omit `ListenPort`, so the server port can't clash with other tunnels on the client side |
 | `wireguard_ipv4_network` / `_ipv6_network` | `10.88.0.0/24` / `fd88:88::/64` | Must not overlap your LAN, the remote LAN, or `100.64.0.0/10` |
-| `wireguard_peers` | `[]` | One entry per client: `name`, `ipv4`, `ipv6`, keys, optional `allowed_ips`, `mtu`, `keepalive`, `server_keepalive` and `expect_connected: true` (both for an always-on router peer only; the latter makes the self-check fail when it's down) |
+| `wireguard_peer_options` | `{}` | Per-peer extras by name: `allowed_ips`, `mtu`, `keepalive`, and for an always-on router peer `server_keepalive` and `expect_connected: true` (the self-check then fails when it's down) |
 | `lan_guard_block` | `true` | Block WireGuard and Tailscale exit-node clients from the node's LAN |
 | `lan_guard_extra_ipv4` / `_ipv6` | `[]` | Extra remote-site ranges to block that the node can't see on its interface |
 | `lan_guard_forward_ipv6` | `true` | `false` = never forward IPv6 (clients' IPv6 black-holed, no IPv6 LAN reachable) |
@@ -222,9 +228,8 @@ Fine-tuning: add any setting to `host_vars/$NODE/vars.yml` (see `group_vars/all.
 | `ssh_password_auth` | `false` | SSH password login (sudo and console always accept the password) |
 | `baseline_unattended_reboot` / `_time` | `true` / `04:30` | Automatic reboot after kernel updates, local time |
 
-Adding a client later without touching existing ones: `scripts/wg-keys.sh --no-server laptop`,
-paste the output under `vault_wireguard_peers` (`ansible-vault edit`), add a matching entry to
-`wireguard_peers` in `vars.yml`, re-run the playbook.
+Adding or removing WireGuard clients: edit `WG_PEERS` in the env file, then steps 2 and 3.
+Existing clients keep their keys and addresses.
 
 ## 4. Run
 

@@ -1,0 +1,19 @@
+---
+# Reference: what scripts/setup.sh generates from the env file. Don't write this by hand.
+ansible_become_pass: "{{ vault_become_pass }}"
+node_timezone: 'Europe/Berlin'
+enable_duckdns: true
+duckdns_domain: myexit
+enable_wireguard: true
+wireguard_port: 51822
+wireguard_peers:
+  - name: unifi
+    ipv4: 10.88.0.2
+    ipv6: "fd88:88::2"
+    private_key: "{{ vault_wireguard_peers['unifi'].private_key }}"
+    public_key: "{{ vault_wireguard_peers['unifi'].public_key }}"
+  - name: phone
+    ipv4: 10.88.0.3
+    ipv6: "fd88:88::3"
+    private_key: "{{ vault_wireguard_peers['phone'].private_key }}"
+    public_key: "{{ vault_wireguard_peers['phone'].public_key }}"

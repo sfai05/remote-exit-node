@@ -118,7 +118,8 @@ if hs=$(wg show {{ wireguard_interface }} latest-handshakes 2>/dev/null); then
             warn "WireGuard $name is configured but not loaded on {{ wireguard_interface }}"
         fi
     }
-{% for peer in wireguard_peers %}
+{% for p in wireguard_peers %}
+{% set peer = p | combine(wireguard_peer_options[p.name] | default({})) %}
     check_peer {{ peer.name | quote }} {{ peer.public_key | quote }} {{ 1 if peer.expect_connected | default(false) | bool else 0 }}
 {% endfor %}
 

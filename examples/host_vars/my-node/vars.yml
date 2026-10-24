@@ -1,25 +1,12 @@
 ---
-# Copy to host_vars/<inventory-name>/vars.yml (gitignored). Non-secret settings only.
-# Every setting in group_vars/all.yml and roles/*/defaults/main.yml can be overridden here.
+# Optional: your own settings for this node (host_vars/<node>/vars.yml). They override the
+# generated setup.yml, and scripts/setup.sh never touches this file. See group_vars/all.yml
+# and roles/*/defaults/main.yml for everything you can set.
 
-ansible_become_pass: "{{ vault_become_pass }}"
+ssh_password_auth: true
 
-node_timezone: Europe/Berlin
-
-duckdns_domain: CHANGEME # subdomain only: "myexit" -> myexit.duckdns.org
-
-wireguard_port: 51822
-
-wireguard_peers:
-  - name: unifi
-    ipv4: 10.88.0.2
-    ipv6: "fd88:88::2"
-    private_key: "{{ vault_wireguard_peers.unifi.private_key }}"
-    public_key: "{{ vault_wireguard_peers.unifi.public_key }}"
-    # If the UniFi import rejects IPv6, drop the ipv6 line and uncomment:
-    # allowed_ips: 0.0.0.0/0
-  - name: phone
-    ipv4: 10.88.0.3
-    ipv6: "fd88:88::3"
-    private_key: "{{ vault_wireguard_peers.phone.private_key }}"
-    public_key: "{{ vault_wireguard_peers.phone.public_key }}"
+wireguard_peer_options:
+  # Always-on router client: server keepalives, and alert when its tunnel is down.
+  unifi: { server_keepalive: 25, expect_connected: true }
+  # If a client rejects IPv6 addresses:
+  # unifi: { allowed_ips: 0.0.0.0/0 }

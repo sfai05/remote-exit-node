@@ -9,7 +9,8 @@ MTU = {{ wireguard_mtu }}
 {% endif %}
 PostUp = nft -f /etc/wireguard/%i-exit.nft
 PostDown = nft delete table inet {{ wireguard_nft_table }}
-{% for peer in wireguard_peers %}
+{% for p in wireguard_peers %}
+{% set peer = p | combine(wireguard_peer_options[p.name] | default({})) %}
 {% set peer_v6 = wireguard_ipv6_enabled | bool and peer.ipv6 | default('') | length > 0 %}
 
 [Peer]

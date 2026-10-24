@@ -1,28 +1,20 @@
 ---
-# Copy to host_vars/<inventory-name>/vault.yml, fill in, then ENCRYPT:
-#   ansible-vault encrypt host_vars/<inventory-name>/vault.yml
-# Generate the WireGuard block with: scripts/wg-keys.sh unifi phone
+# Reference: what scripts/setup.sh keeps in host_vars/<node>/vault.yml, always encrypted.
+# Don't write it by hand: values come from the env file (or setup.sh's hidden prompts) and
+# WireGuard keys are generated for every name in WG_PEERS. To look inside:
+#   ansible-vault view host_vars/<node>/vault.yml
 
-vault_become_pass: CHANGEME # sudo password of the ansible_user on the node
-
-# https://login.tailscale.com/admin/settings/keys
-# One-off (not reusable), non-ephemeral. Only used for the first join.
-vault_tailscale_authkey: CHANGEME
-
-# https://www.duckdns.org (shown after login)
-vault_duckdns_token: CHANGEME
-
-# Optional, e.g. a https://hc-ping.com/<uuid> URL. Leave empty to disable.
-vault_monitoring_heartbeat_url: ""
-
+vault_become_pass: !unsafe 'sudo password of the login user; empty with passwordless sudo'
+vault_tailscale_authkey: !unsafe 'tskey-auth-...'
+vault_duckdns_token: !unsafe 'duckdns token'
+vault_monitoring_heartbeat_url: !unsafe 'https://hc-ping.com/<uuid>'
 vault_wireguard_server:
-  private_key: CHANGEME
-  public_key: CHANGEME
-
+  private_key: '<generated>'
+  public_key: '<generated>'
 vault_wireguard_peers:
   unifi:
-    private_key: CHANGEME
-    public_key: CHANGEME
+    private_key: '<generated>'
+    public_key: '<generated>'
   phone:
-    private_key: CHANGEME
-    public_key: CHANGEME
+    private_key: '<generated>'
+    public_key: '<generated>'

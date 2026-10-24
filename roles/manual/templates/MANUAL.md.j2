@@ -113,11 +113,12 @@ UniFi gateway: Settings → VPN → VPN Client → Create New → WireGuard → 
 (or paste it). Then Settings → Routing → Traffic Routes to choose which devices/domains use it.
 If the host's IP changes and the UniFi tunnel stays down, toggle the VPN client off and on:
 WireGuard looks up `{{ wireguard_endpoint }}` only when the tunnel starts.
-{% if wireguard_peers | selectattr('server_keepalive', 'defined') | list | length > 0 %}
-Server keepalive is on for: {{ wireguard_peers | selectattr('server_keepalive', 'defined') | map(attribute='name') | join(', ') }} (may let them recover by themselves).
+{% if wireguard_peer_options | dict2items | selectattr('value.server_keepalive', 'defined') | list | length > 0 %}
+Server keepalive is on for: {{ wireguard_peer_options | dict2items | selectattr('value.server_keepalive', 'defined') | map(attribute='key') | join(', ') }} (may let them recover by themselves).
 {% endif %}
-For the always-on router client, add `server_keepalive: 25` and `expect_connected: true` to its
-entry in `wireguard_peers`; the heartbeat then alerts when that tunnel is down.
+For the always-on router client, set `server_keepalive: 25` and `expect_connected: true` for
+it under `wireguard_peer_options` in `host_vars/{{ inventory_hostname }}/vars.yml`; the heartbeat
+then alerts when that tunnel is down.
 
 {% for peer in wireguard_peers %}
 ### {{ peer.name }} — {{ peer.ipv4 }}
